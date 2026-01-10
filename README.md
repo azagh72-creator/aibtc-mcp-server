@@ -99,11 +99,11 @@ After adding, restart Claude Code for the MCP server to load.
 ### x402 API Endpoints
 | Tool | Description |
 |------|-------------|
-| `execute_x402_endpoint` | Execute any x402 endpoint with auto-payment |
+| `execute_x402_endpoint` | Execute ANY x402 endpoint URL with auto-payment |
 
-## API Sources
+## Known API Sources
 
-The agent supports endpoints from two x402 API sources:
+The agent can call ANY x402-compatible endpoint URL. Below are documented endpoints from known sources:
 
 ### x402.biwas.xyz (Default)
 - **DeFi Analytics**: Portfolio analysis, strategy builder
