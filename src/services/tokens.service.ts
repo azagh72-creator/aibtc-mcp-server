@@ -1,6 +1,6 @@
 import { ClarityValue, uintCV, principalCV, noneCV, someCV, bufferCV } from "@stacks/transactions";
 import { HiroApiService, getHiroApi, FungibleTokenHolding } from "./hiro-api.js";
-import { getContracts, parseContractId, getWellKnownTokens, type Network } from "../config/index.js";
+import { parseContractId, getWellKnownTokens, type Network } from "../config/index.js";
 import { callContract, type Account, type TransferResult } from "../transactions/builder.js";
 
 // ============================================================================
@@ -33,12 +33,10 @@ export interface TokenInfo {
 
 export class TokensService {
   private hiro: HiroApiService;
-  private contracts: ReturnType<typeof getContracts>;
   private wellKnownTokens: ReturnType<typeof getWellKnownTokens>;
 
   constructor(private network: Network) {
     this.hiro = getHiroApi(network);
-    this.contracts = getContracts(network);
     this.wellKnownTokens = getWellKnownTokens(network);
   }
 
@@ -46,25 +44,17 @@ export class TokensService {
    * Resolve a token symbol or contract ID to a contract ID
    */
   resolveToken(tokenIdentifier: string): string {
-    // Check if it's a well-known token symbol
+    // Check if it's a well-known token symbol (case-insensitive)
     const upperToken = tokenIdentifier.toUpperCase();
-    const knownToken = this.wellKnownTokens[upperToken as keyof typeof this.wellKnownTokens];
-    if (knownToken && knownToken !== "native") {
-      return knownToken;
+
+    // Look up in wellKnownTokens by iterating keys (handles case differences like sBTC vs SBTC)
+    for (const [symbol, contractId] of Object.entries(this.wellKnownTokens)) {
+      if (symbol.toUpperCase() === upperToken && contractId !== "native") {
+        return contractId;
+      }
     }
 
-    // Check common token names
-    if (upperToken === "SBTC" || upperToken === "SBTC") {
-      return this.contracts.SBTC_TOKEN;
-    }
-    if (upperToken === "USDCX") {
-      return this.contracts.USDCX;
-    }
-    if (upperToken === "USDA") {
-      return this.contracts.USDA;
-    }
-
-    // Assume it's already a contract ID
+    // Not a known symbol - treat as contract ID
     return tokenIdentifier;
   }
 
