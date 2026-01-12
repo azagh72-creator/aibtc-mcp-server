@@ -52,6 +52,19 @@ stx402-agent MCP Server (src/index.ts)
 - `src/api.ts` - Axios client with x402-stacks payment interceptor (supports multiple API sources)
 - `src/wallet.ts` - Wallet operations and transaction signing using @stacks/transactions
 - `src/endpoints.ts` - Known x402 endpoint registry from both API sources
+- `src/services/bns.service.ts` - BNS name resolution (supports both V1 and V2)
+- `src/services/hiro-api.ts` - Hiro API client + BNS V2 API client
+
+### BNS V1 vs V2
+
+The agent supports both BNS naming systems:
+
+| System | API | Usage |
+|--------|-----|-------|
+| BNS V1 | `api.hiro.so/v1/names/{name}` | Legacy names (older registrations) |
+| BNS V2 | `api.bnsv2.com/names/{name}` | Current system (most .btc names) |
+
+BNS tools automatically check V2 first for `.btc` names, falling back to V1 for legacy support.
 
 ### x402 Payment Flow
 
