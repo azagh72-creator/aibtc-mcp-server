@@ -183,6 +183,9 @@ Step-by-step operational guides:
 
 - `runbook/clarity-development.md` - Clarity dev workflows and checklists
 - `runbook/cloudflare-scaffold.md` - Cloudflare Worker setup, wrangler config, credentials, deployment patterns
+- `runbook/cloudflare-shared-logger.md` - Shared logging utilities for Cloudflare Workers
 - `runbook/setup-github-pat.md` - GitHub Personal Access Token setup
-- `runbook/setup-github-pages-just-the-docs.md` - Documentation site deployment
+- `runbook/setup-sprout-cron.md` - Sprout documentation cron job setup
+- `runbook/sprout-docs.md` - Sprout documentation system overview
+- `runbook/sprout-docs-github-pages.md` - Documentation site deployment with GitHub Pages
 - `runbook/updating-claude-knowledge.md` - Knowledge base maintenance and sanitization guidelines
