@@ -1,4 +1,4 @@
-import { ClarityValue } from "@stacks/transactions";
+import { ClarityValue, serializeCV } from "@stacks/transactions";
 import { getApiBaseUrl, type Network } from "../config/networks.js";
 import { parseContractId } from "../config/contracts.js";
 
@@ -440,10 +440,7 @@ export class HiroApiService {
     const body = {
       sender: senderAddress,
       arguments: functionArgs.map((arg) => {
-        const serialized = Buffer.from(
-          (arg as unknown as { serialize: () => Uint8Array }).serialize?.() ||
-          require("@stacks/transactions").serializeCV(arg)
-        ).toString("hex");
+        const serialized = Buffer.from(serializeCV(arg)).toString("hex");
         return serialized;
       }),
     };
