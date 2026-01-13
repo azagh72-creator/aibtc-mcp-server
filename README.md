@@ -1,31 +1,32 @@
 # stx402-agent
 
-An MCP (Model Context Protocol) server that enables Claude to interact with the Stacks blockchain and x402 paid API endpoints.
+An MCP (Model Context Protocol) server that gives Claude its own Stacks wallet to interact with the blockchain and x402 paid API endpoints.
 
 ## Features
 
-- **40+ Tools** - Comprehensive Stacks blockchain operations
+- **Agent's Own Wallet** - Claude gets its own wallet to perform blockchain transactions
+- **Secure Storage** - Wallets encrypted with AES-256-GCM and stored locally
+- **50+ Tools** - Comprehensive Stacks blockchain operations
 - **sBTC Support** - Native Bitcoin on Stacks operations
 - **Token Operations** - SIP-010 fungible token transfers and queries
 - **NFT Support** - SIP-009 NFT holdings, transfers, and metadata
 - **Stacking/PoX** - Stacking status and delegation
 - **BNS Domains** - .btc domain lookups and management (V1 + V2)
 - **x402 Payments** - Automatic payment handling for paid APIs
-- **Direct Transactions** - Transfer STX, call contracts, deploy smart contracts
 
 ## Quick Start
 
 ### Option 1: Using npx (Recommended)
 
 ```bash
-claude mcp add stx402 npx stx402-agent -e CLIENT_MNEMONIC="your 24 word mnemonic" -e NETWORK=testnet
+claude mcp add stx402 npx stx402-agent -e NETWORK=testnet
 ```
 
 ### Option 2: Global Install
 
 ```bash
 npm install -g stx402-agent
-claude mcp add stx402 stx402-agent -e CLIENT_MNEMONIC="your 24 word mnemonic" -e NETWORK=testnet
+claude mcp add stx402 stx402-agent -e NETWORK=testnet
 ```
 
 ### Option 3: Manual Configuration
@@ -39,44 +40,122 @@ Add to your Claude Code settings (`~/.claude.json`):
       "command": "npx",
       "args": ["stx402-agent"],
       "env": {
-        "CLIENT_MNEMONIC": "your twenty four word stacks wallet mnemonic phrase goes here",
-        "NETWORK": "testnet",
-        "API_URL": "https://x402.biwas.xyz"
+        "NETWORK": "testnet"
       }
     }
   }
 }
 ```
 
-## Available Tools (41 total)
+## Giving Claude a Wallet
+
+When you first use stx402-agent, Claude doesn't have a wallet. Here's the smooth onboarding flow:
+
+### Example Conversation
+
+```
+You: What's your wallet address?
+
+Claude: I don't have a wallet yet. Would you like to assign me one?
+        I can either create a fresh wallet or you can import an existing one.
+
+You: Create a new wallet called "agent-wallet"
+
+Claude: What password should I use to protect the wallet?
+
+You: use "secure123password"
+
+Claude: I now have a wallet! My address is ST1ABC...XYZ
+
+        IMPORTANT: Please save this recovery phrase securely:
+        "word1 word2 word3 ... word24"
+
+        This phrase will NOT be shown again. It's the only way to recover
+        the wallet if the password is forgotten.
+
+You: Send 10 STX to ST2DEF...
+
+Claude: Done! I've sent 10 STX to ST2DEF...
+        Transaction: 0x123...
+```
+
+### Wallet States
+
+| State | What Claude Says | What To Do |
+|-------|-----------------|------------|
+| No wallet | "I don't have a wallet yet" | Use `wallet_create` or `wallet_import` |
+| Locked | "My wallet is locked" | Use `wallet_unlock` with password |
+| Ready | "My address is ST..." | Claude can perform transactions |
+
+### Session Management
+
+- By default, the wallet auto-locks after 15 minutes
+- You can change this with `wallet_set_timeout` (set to 0 to disable)
+- Use `wallet_lock` to manually lock the wallet
+- Use `wallet_unlock` when you need Claude to transact again
+
+## Wallet Storage
+
+Claude's wallets are stored locally on your machine:
+
+```
+~/.stx402/
+├── wallets.json       # Wallet index (names, addresses - no secrets)
+├── config.json        # Active wallet, settings
+└── wallets/
+    └── [wallet-id]/
+        └── keystore.json  # Encrypted mnemonic (AES-256-GCM + Scrypt)
+```
+
+**Security:**
+- AES-256-GCM encryption with Scrypt key derivation
+- Password required to unlock
+- Mnemonics never stored in plaintext
+- File permissions set to owner-only (0600)
+
+## Available Tools (50+ total)
+
+### Wallet Management
+| Tool | Description |
+|------|-------------|
+| `wallet_create` | Create a new wallet for Claude |
+| `wallet_import` | Import an existing wallet for Claude |
+| `wallet_unlock` | Unlock Claude's wallet |
+| `wallet_lock` | Lock Claude's wallet |
+| `wallet_list` | List Claude's available wallets |
+| `wallet_switch` | Switch Claude to a different wallet |
+| `wallet_delete` | Delete a wallet |
+| `wallet_export` | Export wallet mnemonic |
+| `wallet_status` | Check if Claude's wallet is ready |
+| `wallet_set_timeout` | Set how long wallet stays unlocked |
 
 ### Wallet & Balance
 | Tool | Description |
 |------|-------------|
-| `get_wallet_info` | Get wallet address, network, and API URL |
+| `get_wallet_info` | Get Claude's wallet address and status |
 | `get_stx_balance` | Get STX balance for any address |
 
 ### STX Transfers
 | Tool | Description |
 |------|-------------|
-| `transfer_stx` | Transfer STX tokens to a recipient |
+| `transfer_stx` | Send STX to a recipient |
 | `broadcast_transaction` | Broadcast a pre-signed transaction |
 
 ### sBTC Operations
 | Tool | Description |
 |------|-------------|
-| `sbtc_get_balance` | Get sBTC balance for an address |
-| `sbtc_transfer` | Transfer sBTC to a recipient |
+| `sbtc_get_balance` | Get sBTC balance |
+| `sbtc_transfer` | Send sBTC |
 | `sbtc_get_deposit_info` | Get BTC deposit instructions |
-| `sbtc_get_peg_info` | Get current peg ratio and TVL |
+| `sbtc_get_peg_info` | Get peg ratio and TVL |
 
 ### Token Operations (SIP-010)
 | Tool | Description |
 |------|-------------|
 | `get_token_balance` | Get balance of any SIP-010 token |
-| `transfer_token` | Transfer any SIP-010 token |
-| `get_token_info` | Get token metadata (name, symbol, decimals) |
-| `list_user_tokens` | List all tokens owned by an address |
+| `transfer_token` | Send any SIP-010 token |
+| `get_token_info` | Get token metadata |
+| `list_user_tokens` | List tokens owned by an address |
 | `get_token_holders` | Get top holders of a token |
 
 ### NFT Operations (SIP-009)
@@ -84,8 +163,8 @@ Add to your Claude Code settings (`~/.claude.json`):
 |------|-------------|
 | `get_nft_holdings` | List NFTs owned by an address |
 | `get_nft_metadata` | Get NFT metadata |
-| `transfer_nft` | Transfer NFT to a recipient |
-| `get_nft_owner` | Get current NFT owner |
+| `transfer_nft` | Send an NFT |
+| `get_nft_owner` | Get NFT owner |
 | `get_collection_info` | Get NFT collection details |
 | `get_nft_history` | Get NFT transfer history |
 
@@ -93,35 +172,33 @@ Add to your Claude Code settings (`~/.claude.json`):
 | Tool | Description |
 |------|-------------|
 | `get_pox_info` | Get current PoX cycle info |
-| `get_stacking_status` | Check if address is stacking |
+| `get_stacking_status` | Check stacking status |
 | `stack_stx` | Lock STX for stacking |
 | `extend_stacking` | Extend stacking period |
 
 ### BNS Domains (V1 + V2)
 | Tool | Description |
 |------|-------------|
-| `lookup_bns_name` | Resolve .btc domain to address (supports BNS V2) |
+| `lookup_bns_name` | Resolve .btc domain to address |
 | `reverse_bns_lookup` | Get .btc domain for an address |
-| `get_bns_info` | Get domain details (expiry, owner) |
-| `check_bns_availability` | Check if domain is available (checks both V1 and V2) |
-| `get_bns_price` | Get registration price for domain |
-| `list_user_domains` | List domains owned by an address |
-
-> **Note:** BNS tools now support both BNS V1 (legacy) and BNS V2 (current) naming systems. Most `.btc` names are registered through BNS V2 at `api.bnsv2.com`.
+| `get_bns_info` | Get domain details |
+| `check_bns_availability` | Check if domain is available |
+| `get_bns_price` | Get registration price |
+| `list_user_domains` | List domains owned |
 
 ### Smart Contracts
 | Tool | Description |
 |------|-------------|
 | `call_contract` | Call a smart contract function |
 | `deploy_contract` | Deploy a Clarity smart contract |
-| `get_transaction_status` | Check transaction status by txid |
-| `call_read_only_function` | Call contract read function (no signing) |
+| `get_transaction_status` | Check transaction status |
+| `call_read_only_function` | Call read-only function |
 
 ### Blockchain Queries
 | Tool | Description |
 |------|-------------|
-| `get_account_info` | Get account nonce, balance, etc. |
-| `get_account_transactions` | List account transaction history |
+| `get_account_info` | Get account nonce, balance |
+| `get_account_transactions` | List transaction history |
 | `get_block_info` | Get block details |
 | `get_mempool_info` | Get pending transactions |
 | `get_contract_info` | Get contract ABI and source |
@@ -131,37 +208,36 @@ Add to your Claude Code settings (`~/.claude.json`):
 ### x402 API Endpoints
 | Tool | Description |
 |------|-------------|
-| `list_x402_endpoints` | Discover available x402 endpoints |
-| `execute_x402_endpoint` | Execute any x402 endpoint with auto-payment |
+| `list_x402_endpoints` | Discover x402 endpoints |
+| `execute_x402_endpoint` | Execute x402 endpoint with auto-payment |
 
 ## Usage Examples
 
+**Wallet management:**
+> "What's your wallet address?"
+> "Create a wallet for yourself"
+> "Unlock your wallet"
+> "Keep your wallet unlocked for 1 hour"
+
 **Check balances:**
-> "What's my STX balance?"
-> "How much sBTC do I have?"
-> "Show my USDCx balance"
+> "How much STX do you have?"
+> "What's your sBTC balance?"
 
 **Transfer tokens:**
 > "Send 2 STX to ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM"
 > "Transfer 0.001 sBTC to muneeb.btc"
 
 **NFTs:**
-> "What NFTs do I own?"
-> "Show metadata for this NFT collection"
+> "What NFTs do you own?"
+> "Send this NFT to alice.btc"
 
 **BNS domains:**
 > "What address is satoshi.btc?"
 > "Is myname.btc available?"
-> "What domains do I own?"
-
-**Stacking:**
-> "Am I currently stacking?"
-> "What's the current PoX cycle?"
 
 **x402 endpoints:**
 > "Get trending liquidity pools"
 > "Tell me a dad joke"
-> "Summarize this article: ..."
 
 ## Supported Tokens
 
@@ -175,28 +251,55 @@ Or use any SIP-010 token by contract ID: `SP2X...::token-name`
 
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
-| `CLIENT_MNEMONIC` | Your 24-word Stacks wallet mnemonic | (required) |
 | `NETWORK` | `mainnet` or `testnet` | `testnet` |
 | `API_URL` | Default x402 API base URL | `https://x402.biwas.xyz` |
+| `CLIENT_MNEMONIC` | (Optional) Pre-configured mnemonic | - |
+
+**Note:** `CLIENT_MNEMONIC` is optional. The recommended approach is to let Claude create its own wallet.
 
 ## Architecture
 
 ```
-Claude → stx402-agent MCP Server
-              ↓
-    ┌─────────┴─────────┐
-    ↓                   ↓
-Hiro Stacks API    x402 Endpoints
-    ↓                   ↓
-Stacks Blockchain  Paid API Services
+You ←→ Claude ←→ stx402-agent MCP Server
+                        ↓
+              Claude's Wallet (~/.stx402/)
+                        ↓
+              ┌─────────┴─────────┐
+              ↓                   ↓
+        Hiro Stacks API    x402 Endpoints
+              ↓                   ↓
+        Stacks Blockchain  Paid API Services
 ```
 
 ## Security Notes
 
-- Your mnemonic is stored locally and never transmitted
-- Transactions are signed locally before broadcast
-- Only use wallets with funds you're willing to spend
-- Consider using a dedicated wallet for x402 interactions
+- Claude's wallet is stored encrypted on YOUR machine
+- Password is never stored - only the encrypted keystore
+- Mnemonics shown only once at creation
+- Auto-lock after 15 minutes (configurable)
+- Transactions signed locally before broadcast
+- For mainnet: Fund with small amounts first
+
+## Advanced: Pre-configured Mnemonic
+
+For automated setups, you can pre-configure a mnemonic:
+
+```json
+{
+  "mcpServers": {
+    "stx402": {
+      "command": "npx",
+      "args": ["stx402-agent"],
+      "env": {
+        "CLIENT_MNEMONIC": "your twenty four word mnemonic phrase",
+        "NETWORK": "testnet"
+      }
+    }
+  }
+}
+```
+
+This gives Claude immediate access without the wallet creation flow.
 
 ## Development
 

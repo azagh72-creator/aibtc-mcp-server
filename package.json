@@ -1,6 +1,6 @@
 {
   "name": "stx402-agent",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Claude Code MCP server for x402 endpoint discovery and execution with Stacks wallet integration",
   "type": "module",
   "main": "dist/index.js",
@@ -37,6 +37,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "@scure/bip39": "^2.0.1",
     "@stacks/network": "^7.3.1",
     "@stacks/transactions": "^7.3.1",
     "@stacks/wallet-sdk": "^7.2.0",
