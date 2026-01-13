@@ -198,6 +198,7 @@ Claude's wallets are stored locally on your machine:
 ### DeFi - ALEX DEX (Mainnet)
 | Tool | Description |
 |------|-------------|
+| `alex_list_pools` | Discover all available trading pools |
 | `alex_get_swap_quote` | Get expected output for a token swap |
 | `alex_swap` | Execute a token swap |
 | `alex_get_pool_info` | Get liquidity pool reserves |
@@ -254,7 +255,8 @@ Claude's wallets are stored locally on your machine:
 > "Is myname.btc available?"
 
 **DeFi trading (mainnet):**
-> "Get a swap quote for 1000 wSTX to ALEX"
+> "What pools are available on ALEX?"
+> "Get a swap quote for 1000 wSTX to sUSDT"
 > "What assets can I lend on Zest?"
 > "Supply 100 stSTX to Zest"
 > "Check my Zest position for aeUSDC"

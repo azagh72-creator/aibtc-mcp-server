@@ -163,6 +163,7 @@ Add to your Claude Code MCP settings:
 - `execute_x402_endpoint` - Execute ANY x402 endpoint URL with automatic payment handling. Can use full URL or path+apiUrl.
 
 ### DeFi - ALEX DEX (Mainnet Only)
+- `alex_list_pools` - **Start here!** Discover all available trading pools
 - `alex_get_swap_quote` - Get expected output for a token swap
 - `alex_swap` - Execute a token swap on ALEX AMM
 - `alex_get_pool_info` - Get liquidity pool reserves and details
@@ -192,8 +193,9 @@ When a user asks for something:
 |---------|--------|
 | "Send 2 STX to ST1..." | `transfer_stx` with amount "2000000" |
 | "What are trending pools?" | `execute_x402_endpoint` with path="/api/pools/trending" |
-| "Swap 100 STX for ALEX" | `alex_swap` with tokenX=wSTX, tokenY=ALEX |
-| "How much ALEX for 10 STX?" | `alex_get_swap_quote` for pricing |
+| "What pools can I trade on ALEX?" | `alex_list_pools` to discover available pairs |
+| "Swap 100 wSTX for sUSDT" | `alex_swap` with tokenX=wSTX, tokenY=sUSDT |
+| "How much sUSDT for 10 wSTX?" | `alex_get_swap_quote` for pricing |
 | "Supply 1000 stSTX to Zest" | `zest_supply` to earn lending interest |
 | "Check my Zest position" | `zest_get_position` for supplied/borrowed |
 | "Tell me a dad joke" | `execute_x402_endpoint` with url="https://stx402.com/api/ai/dad-joke" |
