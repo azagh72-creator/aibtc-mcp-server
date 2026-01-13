@@ -61,6 +61,56 @@ export class ContractError extends Stx402Error {
 }
 
 /**
+ * Base error for wallet operations
+ */
+export class WalletError extends Stx402Error {
+  constructor(message: string, details?: unknown) {
+    super(message, "WALLET_ERROR", details);
+    this.name = "WalletError";
+  }
+}
+
+/**
+ * Error when wallet is locked and operation requires unlocked wallet
+ */
+export class WalletLockedError extends WalletError {
+  constructor() {
+    super("Wallet is locked. Use wallet_unlock to unlock it.");
+    this.name = "WalletLockedError";
+  }
+}
+
+/**
+ * Error when wallet is not found
+ */
+export class WalletNotFoundError extends WalletError {
+  constructor(walletId: string) {
+    super(`Wallet not found: ${walletId}`);
+    this.name = "WalletNotFoundError";
+  }
+}
+
+/**
+ * Error for invalid password
+ */
+export class InvalidPasswordError extends WalletError {
+  constructor() {
+    super("Invalid password");
+    this.name = "InvalidPasswordError";
+  }
+}
+
+/**
+ * Error for invalid mnemonic
+ */
+export class InvalidMnemonicError extends WalletError {
+  constructor() {
+    super("Invalid mnemonic phrase");
+    this.name = "InvalidMnemonicError";
+  }
+}
+
+/**
  * Format error for tool response
  */
 export function formatError(error: unknown): { message: string; code?: string; details?: unknown } {
