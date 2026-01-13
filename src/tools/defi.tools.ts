@@ -163,6 +163,56 @@ Note: ALEX DEX is only available on mainnet.`,
     }
   );
 
+  // List available pools
+  server.registerTool(
+    "alex_list_pools",
+    {
+      description: `List all available trading pools on ALEX DEX.
+
+Discovers all token pairs that can be swapped directly.
+Returns pool ID, token pair, and factor (fee tier) for each pool.
+
+Use this to find which tokens can be swapped before calling alex_swap.
+
+Note: ALEX DEX is only available on mainnet.`,
+      inputSchema: {
+        limit: z
+          .number()
+          .optional()
+          .default(50)
+          .describe("Maximum number of pools to return (default 50)"),
+      },
+    },
+    async ({ limit }) => {
+      try {
+        if (NETWORK !== "mainnet") {
+          return createJsonResponse({
+            error: "ALEX DEX is only available on mainnet",
+            network: NETWORK,
+          });
+        }
+
+        const alexService = getAlexDexService(NETWORK);
+        const pools = await alexService.listPools(limit || 50);
+
+        return createJsonResponse({
+          network: NETWORK,
+          poolCount: pools.length,
+          pools: pools.map((p) => ({
+            id: p.id,
+            pair: `${p.tokenXSymbol}/${p.tokenYSymbol}`,
+            tokenX: p.tokenX,
+            tokenY: p.tokenY,
+            factor: p.factor,
+          })),
+          usage: "Use the tokenX and tokenY contract IDs with alex_get_swap_quote or alex_swap",
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
   // ==========================================================================
   // Zest Protocol Tools
   // ==========================================================================

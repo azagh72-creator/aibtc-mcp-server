@@ -40,6 +40,15 @@ export interface PoolInfo {
   totalShares?: string;
 }
 
+export interface PoolListing {
+  id: number;
+  tokenX: string;
+  tokenY: string;
+  tokenXSymbol: string;
+  tokenYSymbol: string;
+  factor: string;
+}
+
 export interface ZestMarketInfo {
   asset: string;
   totalSupply: string;
@@ -245,6 +254,59 @@ export class AlexDexService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * List all available pools on ALEX DEX
+   * Iterates through pool IDs to discover all trading pairs
+   */
+  async listPools(limit: number = 50): Promise<PoolListing[]> {
+    this.ensureMainnet();
+
+    const pools: PoolListing[] = [];
+
+    for (let i = 1; i <= limit; i++) {
+      try {
+        const result = await this.hiro.callReadOnlyFunction(
+          this.contracts!.ammPool,
+          "get-pool-details-by-id",
+          [uintCV(BigInt(i))],
+          this.contracts!.ammPool.split(".")[0]
+        );
+
+        if (!result.okay || !result.result) {
+          break;
+        }
+
+        const decoded = cvToJSON(hexToCV(result.result));
+        if (!decoded.success || !decoded.value?.value) {
+          break;
+        }
+
+        const pool = decoded.value.value;
+        const tokenX = pool["token-x"]?.value || "";
+        const tokenY = pool["token-y"]?.value || "";
+        const factor = pool["factor"]?.value || "0";
+
+        // Extract symbol from contract name
+        const tokenXSymbol = tokenX.split(".")[1]?.replace("token-", "") || tokenX;
+        const tokenYSymbol = tokenY.split(".")[1]?.replace("token-", "") || tokenY;
+
+        pools.push({
+          id: i,
+          tokenX,
+          tokenY,
+          tokenXSymbol,
+          tokenYSymbol,
+          factor,
+        });
+      } catch {
+        // No more pools
+        break;
+      }
+    }
+
+    return pools;
   }
 }
 
