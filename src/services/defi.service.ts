@@ -7,14 +7,22 @@ import {
   PostConditionMode,
   Pc,
   principalCV,
-  noneCV,
+  broadcastTransaction,
+  makeContractCall,
+  listCV,
+  tupleCV,
 } from "@stacks/transactions";
+import { STACKS_MAINNET } from "@stacks/network";
+import { AlexSDK, Currency, type TokenInfo } from "alex-sdk";
 import { HiroApiService, getHiroApi } from "./hiro-api.js";
 import {
   getAlexContracts,
   getZestContracts,
   parseContractId,
   type Network,
+  ZEST_ASSETS,
+  ZEST_ASSETS_LIST,
+  type ZestAssetConfig,
 } from "../config/index.js";
 import { callContract, type Account, type TransferResult } from "../transactions/builder.js";
 
@@ -73,105 +81,102 @@ export interface ZestAsset {
 }
 
 // ============================================================================
-// ALEX DEX Service
+// ALEX DEX Service (using alex-sdk)
 // ============================================================================
 
 export class AlexDexService {
+  private sdk: AlexSDK;
   private hiro: HiroApiService;
   private contracts: ReturnType<typeof getAlexContracts>;
+  private tokenInfoCache: TokenInfo[] | null = null;
 
   constructor(private network: Network) {
+    this.sdk = new AlexSDK();
     this.hiro = getHiroApi(network);
     this.contracts = getAlexContracts(network);
   }
 
   private ensureMainnet(): void {
-    if (!this.contracts) {
+    if (this.network !== "mainnet") {
       throw new Error("ALEX DEX is only available on mainnet");
     }
   }
 
   /**
-   * Get a swap quote for token X to token Y
+   * Get all swappable token info from SDK (cached)
+   */
+  private async getTokenInfos(): Promise<TokenInfo[]> {
+    if (!this.tokenInfoCache) {
+      this.tokenInfoCache = await this.sdk.fetchSwappableCurrency();
+    }
+    return this.tokenInfoCache;
+  }
+
+  /**
+   * Convert a token identifier (contract ID or symbol) to an ALEX SDK Currency
+   */
+  private async resolveCurrency(tokenId: string): Promise<Currency> {
+    // Handle common aliases
+    const normalizedId = tokenId.toUpperCase();
+    if (normalizedId === "STX" || normalizedId === "WSTX") {
+      return Currency.STX;
+    }
+    if (normalizedId === "ALEX") {
+      return Currency.ALEX;
+    }
+
+    // Fetch available tokens from SDK
+    const tokens = await this.getTokenInfos();
+
+    for (const token of tokens) {
+      // Match by contract ID (strip the ::asset suffix for comparison)
+      const wrapContract = token.wrapToken.split("::")[0];
+      const underlyingContract = token.underlyingToken.split("::")[0];
+
+      if (wrapContract === tokenId || underlyingContract === tokenId) {
+        return token.id;
+      }
+
+      // Match by symbol (case-insensitive)
+      if (token.name.toLowerCase() === tokenId.toLowerCase()) {
+        return token.id;
+      }
+    }
+
+    throw new Error(`Unknown token: ${tokenId}. Use alex_list_pools to see available tokens.`);
+  }
+
+  /**
+   * Get a swap quote for token X to token Y using ALEX SDK
    */
   async getSwapQuote(
     tokenX: string,
     tokenY: string,
     amountIn: bigint,
-    senderAddress: string
+    _senderAddress: string
   ): Promise<SwapQuote> {
     this.ensureMainnet();
 
-    // Call get-y-given-x to get the expected output
-    const result = await this.hiro.callReadOnlyFunction(
-      this.contracts!.ammPool,
-      "get-y-given-x",
-      [
-        contractPrincipalCV(...parseContractIdTuple(tokenX)),
-        contractPrincipalCV(...parseContractIdTuple(tokenY)),
-        uintCV(100000000n), // factor (1e8)
-        uintCV(amountIn),
-      ],
-      senderAddress
-    );
+    const currencyX = await this.resolveCurrency(tokenX);
+    const currencyY = await this.resolveCurrency(tokenY);
 
-    if (!result.okay || !result.result) {
-      throw new Error(`Failed to get swap quote: ${result.cause || "Unknown error"}`);
-    }
+    const amountOut = await this.sdk.getAmountTo(currencyX, amountIn, currencyY);
 
-    const decoded = cvToJSON(hexToCV(result.result));
-    const amountOut = extractUintValue(decoded);
+    // Get route info
+    const routeCurrencies = await this.sdk.getRouter(currencyX, currencyY);
 
     return {
       tokenIn: tokenX,
       tokenOut: tokenY,
       amountIn: amountIn.toString(),
-      amountOut: amountOut,
-      route: [tokenX, tokenY],
-    };
-  }
-
-  /**
-   * Get a reverse swap quote (how much tokenX needed for amountOut of tokenY)
-   */
-  async getReverseSwapQuote(
-    tokenX: string,
-    tokenY: string,
-    amountOut: bigint,
-    senderAddress: string
-  ): Promise<SwapQuote> {
-    this.ensureMainnet();
-
-    const result = await this.hiro.callReadOnlyFunction(
-      this.contracts!.ammPool,
-      "get-x-given-y",
-      [
-        contractPrincipalCV(...parseContractIdTuple(tokenX)),
-        contractPrincipalCV(...parseContractIdTuple(tokenY)),
-        uintCV(100000000n), // factor (1e8)
-        uintCV(amountOut),
-      ],
-      senderAddress
-    );
-
-    if (!result.okay || !result.result) {
-      throw new Error(`Failed to get reverse swap quote: ${result.cause || "Unknown error"}`);
-    }
-
-    const decoded = cvToJSON(hexToCV(result.result));
-    const amountIn = extractUintValue(decoded);
-
-    return {
-      tokenIn: tokenX,
-      tokenOut: tokenY,
-      amountIn: amountIn,
       amountOut: amountOut.toString(),
-      route: [tokenX, tokenY],
+      route: routeCurrencies.map(c => c.toString()),
     };
   }
 
   /**
-   * Execute a swap using the swap-helper contract
+   * Execute a swap using ALEX SDK
+   * The SDK handles STX wrapping internally
    */
   async swap(
     account: Account,
@@ -182,32 +187,43 @@ export class AlexDexService {
   ): Promise<TransferResult> {
     this.ensureMainnet();
 
-    const { address, name } = parseContractId(this.contracts!.swapHelper);
+    const currencyX = await this.resolveCurrency(tokenX);
+    const currencyY = await this.resolveCurrency(tokenY);
 
-    // swap-helper automatically determines direction
-    const functionArgs: ClarityValue[] = [
-      contractPrincipalCV(...parseContractIdTuple(tokenX)),
-      contractPrincipalCV(...parseContractIdTuple(tokenY)),
-      uintCV(100000000n), // factor (1e8)
-      uintCV(amountIn),
-      minAmountOut > 0n ? uintCV(minAmountOut) : noneCV(),
-    ];
+    // Use SDK to build the swap transaction parameters
+    const txParams = await this.sdk.runSwap(
+      account.address,
+      currencyX,
+      currencyY,
+      amountIn,
+      minAmountOut
+    );
 
-    // Add post-conditions for safety
-    const postConditions = [
-      Pc.principal(account.address)
-        .willSendLte(amountIn)
-        .ft(tokenX as `${string}.${string}`, extractAssetName(tokenX)),
-    ];
-
-    return callContract(account, {
-      contractAddress: address,
-      contractName: name,
-      functionName: "swap-helper",
-      functionArgs,
+    // Use makeContractCall to build and sign the transaction
+    const transaction = await makeContractCall({
+      contractAddress: txParams.contractAddress,
+      contractName: txParams.contractName,
+      functionName: txParams.functionName,
+      functionArgs: txParams.functionArgs,
+      postConditions: txParams.postConditions,
+      senderKey: account.privateKey,
+      network: STACKS_MAINNET,
       postConditionMode: PostConditionMode.Deny,
-      postConditions,
     });
+
+    const broadcastResult = await broadcastTransaction({
+      transaction,
+      network: STACKS_MAINNET
+    });
+
+    if ("error" in broadcastResult) {
+      throw new Error(`Broadcast failed: ${broadcastResult.error} - ${broadcastResult.reason}`);
+    }
+
+    return {
+      txid: broadcastResult.txid,
+      rawTx: Buffer.from(transaction.serialize()).toString("hex"),
+    };
   }
 
   /**
@@ -220,9 +236,11 @@ export class AlexDexService {
   ): Promise<PoolInfo | null> {
     this.ensureMainnet();
 
+    if (!this.contracts) return null;
+
     try {
       const result = await this.hiro.callReadOnlyFunction(
-        this.contracts!.ammPool,
+        this.contracts.ammPool,
         "get-pool-details",
         [
           contractPrincipalCV(...parseContractIdTuple(tokenX)),
@@ -258,20 +276,22 @@ export class AlexDexService {
 
   /**
    * List all available pools on ALEX DEX
-   * Iterates through pool IDs to discover all trading pairs
+   * Uses SDK to fetch swappable currencies
    */
   async listPools(limit: number = 50): Promise<PoolListing[]> {
     this.ensureMainnet();
+
+    if (!this.contracts) return [];
 
     const pools: PoolListing[] = [];
 
     for (let i = 1; i <= limit; i++) {
       try {
         const result = await this.hiro.callReadOnlyFunction(
-          this.contracts!.ammPool,
+          this.contracts.ammPool,
           "get-pool-details-by-id",
           [uintCV(BigInt(i))],
-          this.contracts!.ammPool.split(".")[0]
+          this.contracts.ammPool.split(".")[0]
         );
 
         if (!result.okay || !result.result) {
@@ -308,6 +328,30 @@ export class AlexDexService {
 
     return pools;
   }
+
+  /**
+   * Get all swappable currencies from ALEX SDK
+   */
+  async getSwappableCurrencies(): Promise<TokenInfo[]> {
+    this.ensureMainnet();
+    return await this.getTokenInfos();
+  }
+
+  /**
+   * Get latest prices from ALEX SDK
+   */
+  async getLatestPrices(): Promise<Record<string, number>> {
+    this.ensureMainnet();
+    const prices = await this.sdk.getLatestPrices();
+    // Convert to regular object with string keys
+    const result: Record<string, number> = {};
+    for (const [key, value] of Object.entries(prices)) {
+      if (value !== undefined) {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
 }
 
 // ============================================================================
@@ -330,58 +374,59 @@ export class ZestProtocolService {
   }
 
   /**
+   * Get asset configuration from ZEST_ASSETS by symbol or contract ID
+   */
+  private getAssetConfig(assetOrSymbol: string): ZestAssetConfig {
+    // Check by symbol first (case-insensitive)
+    const bySymbol = Object.values(ZEST_ASSETS).find(
+      (a) => a.symbol.toLowerCase() === assetOrSymbol.toLowerCase()
+    );
+    if (bySymbol) return bySymbol;
+
+    // Check by token contract ID
+    const byContract = Object.values(ZEST_ASSETS).find(
+      (a) => a.token === assetOrSymbol
+    );
+    if (byContract) return byContract;
+
+    throw new Error(
+      `Unknown Zest asset: ${assetOrSymbol}. Use zest_list_assets to see available assets.`
+    );
+  }
+
+  /**
+   * Build the assets-list CV required for borrow/withdraw operations
+   * This is a list of tuples containing (asset, lp-token, oracle) for all supported assets
+   */
+  private buildAssetsListCV(): ClarityValue {
+    return listCV(
+      ZEST_ASSETS_LIST.map((asset) => {
+        const [assetAddr, assetName] = asset.token.split(".");
+        const [lpAddr, lpName] = asset.lpToken.split(".");
+        const [oracleAddr, oracleName] = asset.oracle.split(".");
+
+        return tupleCV({
+          asset: contractPrincipalCV(assetAddr, assetName),
+          "lp-token": contractPrincipalCV(lpAddr, lpName),
+          oracle: contractPrincipalCV(oracleAddr, oracleName),
+        });
+      })
+    );
+  }
+
+  /**
    * Get all supported assets from Zest Protocol
-   * Calls the get-assets() read-only function on the pool-borrow contract
-   * Then fetches metadata for each asset from the Hiro API
+   * Returns the hardcoded asset list with full metadata
    */
   async getAssets(): Promise<ZestAsset[]> {
     this.ensureMainnet();
 
-    const result = await this.hiro.callReadOnlyFunction(
-      this.contracts!.poolBorrow,
-      "get-assets",
-      [],
-      this.contracts!.poolBorrow.split(".")[0] // Use deployer as sender
-    );
-
-    if (!result.okay || !result.result) {
-      throw new Error(`Failed to get Zest assets: ${result.cause || "Unknown error"}`);
-    }
-
-    const decoded = cvToJSON(hexToCV(result.result));
-
-    if (!decoded.value || !Array.isArray(decoded.value)) {
-      return [];
-    }
-
-    // Fetch metadata for each asset from Hiro API
-    const assets: ZestAsset[] = await Promise.all(
-      decoded.value.map(async (item: { value: string }) => {
-        const contractId = item.value;
-
-        // Try to get token metadata from Hiro API
-        const metadata = await this.hiro.getTokenMetadata(contractId);
-
-        if (metadata) {
-          return {
-            contractId,
-            symbol: metadata.symbol,
-            name: metadata.name,
-            decimals: metadata.decimals,
-          };
-        }
-
-        // Fallback: extract from contract name
-        const contractName = contractId.split(".")[1] || contractId;
-        return {
-          contractId,
-          symbol: contractName.replace("token-", "").replace("-token", "").toUpperCase(),
-          name: contractName,
-        };
-      })
-    );
-
-    return assets;
+    return Object.values(ZEST_ASSETS).map((asset) => ({
+      contractId: asset.token,
+      symbol: asset.symbol,
+      name: asset.name,
+      decimals: asset.decimals,
+    }));
   }
 
   /**
@@ -393,19 +438,8 @@ export class ZestProtocolService {
       return assetOrSymbol;
     }
 
-    // Look up by symbol
-    const assets = await this.getAssets();
-    const match = assets.find(
-      (a) => a.symbol.toLowerCase() === assetOrSymbol.toLowerCase()
-    );
-
-    if (!match) {
-      throw new Error(
-        `Unknown asset symbol: ${assetOrSymbol}. Use zest_list_assets to see available assets.`
-      );
-    }
-
-    return match.contractId;
+    const config = this.getAssetConfig(assetOrSymbol);
+    return config.token;
   }
 
   /**
@@ -419,7 +453,7 @@ export class ZestProtocolService {
 
     try {
       const result = await this.hiro.callReadOnlyFunction(
-        this.contracts!.poolReserve,
+        this.contracts!.poolBorrow,
         "get-user-reserve-data",
         [
           principalCV(userAddress),
@@ -434,11 +468,11 @@ export class ZestProtocolService {
 
       const decoded = cvToJSON(hexToCV(result.result));
 
-      if (decoded.value && typeof decoded.value === "object") {
+      if (decoded && typeof decoded === "object") {
         return {
           asset,
-          supplied: decoded.value["current-a-token-balance"]?.value || "0",
-          borrowed: decoded.value["current-variable-debt"]?.value || "0",
+          supplied: decoded["current-a-token-balance"]?.value || "0",
+          borrowed: decoded["current-variable-debt"]?.value || "0",
         };
       }
 
@@ -450,6 +484,8 @@ export class ZestProtocolService {
 
   /**
    * Supply assets to Zest lending pool
+   *
+   * Contract signature: supply(lp, pool-reserve, asset, amount, owner)
    */
   async supply(
     account: Account,
@@ -459,19 +495,24 @@ export class ZestProtocolService {
   ): Promise<TransferResult> {
     this.ensureMainnet();
 
+    const assetConfig = this.getAssetConfig(asset);
     const { address, name } = parseContractId(this.contracts!.poolBorrow);
+    const [lpAddr, lpName] = assetConfig.lpToken.split(".");
+    const [assetAddr, assetName] = assetConfig.token.split(".");
 
     const functionArgs: ClarityValue[] = [
-      contractPrincipalCV(...parseContractIdTuple(asset)),
-      uintCV(amount),
-      principalCV(onBehalfOf || account.address),
+      contractPrincipalCV(lpAddr, lpName),                    // lp
+      principalCV(this.contracts!.poolReserve),               // pool-reserve
+      contractPrincipalCV(assetAddr, assetName),              // asset
+      uintCV(amount),                                         // amount
+      principalCV(onBehalfOf || account.address),             // owner
     ];
 
     // Post-condition: user will send the asset
     const postConditions = [
       Pc.principal(account.address)
         .willSendEq(amount)
-        .ft(asset as `${string}.${string}`, extractAssetName(asset)),
+        .ft(assetConfig.token as `${string}.${string}`, assetName),
     ];
 
     return callContract(account, {
@@ -486,6 +527,8 @@ export class ZestProtocolService {
 
   /**
    * Withdraw assets from Zest lending pool
+   *
+   * Contract signature: withdraw(pool-reserve, asset, lp, oracle, assets, amount, owner)
    */
   async withdraw(
     account: Account,
@@ -494,12 +537,20 @@ export class ZestProtocolService {
   ): Promise<TransferResult> {
     this.ensureMainnet();
 
+    const assetConfig = this.getAssetConfig(asset);
     const { address, name } = parseContractId(this.contracts!.poolBorrow);
+    const [assetAddr, assetName] = assetConfig.token.split(".");
+    const [lpAddr, lpName] = assetConfig.lpToken.split(".");
+    const [oracleAddr, oracleName] = assetConfig.oracle.split(".");
 
     const functionArgs: ClarityValue[] = [
-      contractPrincipalCV(...parseContractIdTuple(asset)),
-      uintCV(amount),
-      principalCV(account.address),
+      principalCV(this.contracts!.poolReserve),               // pool-reserve
+      contractPrincipalCV(assetAddr, assetName),              // asset
+      contractPrincipalCV(lpAddr, lpName),                    // lp
+      contractPrincipalCV(oracleAddr, oracleName),            // oracle
+      this.buildAssetsListCV(),                               // assets
+      uintCV(amount),                                         // amount
+      principalCV(account.address),                           // owner
     ];
 
     return callContract(account, {
@@ -513,6 +564,8 @@ export class ZestProtocolService {
 
   /**
    * Borrow assets from Zest lending pool
+   *
+   * Contract signature: borrow(pool-reserve, oracle, asset-to-borrow, lp, assets, amount, fee-calculator, interest-rate-mode, owner)
    */
   async borrow(
     account: Account,
@@ -521,12 +574,22 @@ export class ZestProtocolService {
   ): Promise<TransferResult> {
     this.ensureMainnet();
 
+    const assetConfig = this.getAssetConfig(asset);
     const { address, name } = parseContractId(this.contracts!.poolBorrow);
+    const [assetAddr, assetName] = assetConfig.token.split(".");
+    const [lpAddr, lpName] = assetConfig.lpToken.split(".");
+    const [oracleAddr, oracleName] = assetConfig.oracle.split(".");
 
     const functionArgs: ClarityValue[] = [
-      contractPrincipalCV(...parseContractIdTuple(asset)),
-      uintCV(amount),
-      principalCV(account.address),
+      principalCV(this.contracts!.poolReserve),               // pool-reserve
+      contractPrincipalCV(oracleAddr, oracleName),            // oracle
+      contractPrincipalCV(assetAddr, assetName),              // asset-to-borrow
+      contractPrincipalCV(lpAddr, lpName),                    // lp
+      this.buildAssetsListCV(),                               // assets
+      uintCV(amount),                                         // amount-to-be-borrowed
+      principalCV(this.contracts!.feesCalculator),            // fee-calculator
+      uintCV(BigInt(0)),                                      // interest-rate-mode (0 = variable)
+      principalCV(account.address),                           // owner
     ];
 
     return callContract(account, {
@@ -540,6 +603,8 @@ export class ZestProtocolService {
 
   /**
    * Repay borrowed assets
+   *
+   * Contract signature: repay(asset, amount-to-repay, on-behalf-of, payer)
    */
   async repay(
     account: Account,
@@ -549,19 +614,22 @@ export class ZestProtocolService {
   ): Promise<TransferResult> {
     this.ensureMainnet();
 
+    const assetConfig = this.getAssetConfig(asset);
     const { address, name } = parseContractId(this.contracts!.poolBorrow);
+    const [assetAddr, assetName] = assetConfig.token.split(".");
 
     const functionArgs: ClarityValue[] = [
-      contractPrincipalCV(...parseContractIdTuple(asset)),
-      uintCV(amount),
-      principalCV(onBehalfOf || account.address),
+      contractPrincipalCV(assetAddr, assetName),              // asset
+      uintCV(amount),                                         // amount-to-repay
+      principalCV(onBehalfOf || account.address),             // on-behalf-of
+      principalCV(account.address),                           // payer
     ];
 
     // Post-condition: user will send the asset to repay
     const postConditions = [
       Pc.principal(account.address)
         .willSendLte(amount)
-        .ft(asset as `${string}.${string}`, extractAssetName(asset)),
+        .ft(assetConfig.token as `${string}.${string}`, assetName),
     ];
 
     return callContract(account, {
@@ -582,37 +650,6 @@ export class ZestProtocolService {
 function parseContractIdTuple(contractId: string): [string, string] {
   const { address, name } = parseContractId(contractId);
   return [address, name];
-}
-
-function extractAssetName(contractId: string): string {
-  const { name } = parseContractId(contractId);
-  return name;
-}
-
-function extractUintValue(decoded: unknown): string {
-  if (typeof decoded === "object" && decoded !== null) {
-    const obj = decoded as Record<string, unknown>;
-
-    // Check if this is an error response (success: false)
-    if ("success" in obj && obj.success === false) {
-      const errorCode = obj.value && typeof obj.value === "object"
-        ? (obj.value as Record<string, unknown>).value
-        : obj.value;
-      throw new Error(`Contract returned error: ${errorCode}`);
-    }
-
-    // Handle ok response
-    if ("value" in obj && typeof obj.value === "object" && obj.value !== null) {
-      const inner = obj.value as Record<string, unknown>;
-      if ("value" in inner) {
-        return String(inner.value);
-      }
-    }
-    if ("value" in obj) {
-      return String(obj.value);
-    }
-  }
-  return "0";
 }
 
 // ============================================================================
