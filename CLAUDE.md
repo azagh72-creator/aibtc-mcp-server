@@ -113,20 +113,14 @@ Managed wallets are stored encrypted in `~/.stx402/`:
 
 ## Adding to Claude Code
 
-Add to your Claude Code MCP settings:
-```json
-{
-  "mcpServers": {
-    "stx402": {
-      "command": "node",
-      "args": ["/path/to/stx402-agent/dist/index.js"],
-      "env": {
-        "NETWORK": "testnet"
-      }
-    }
-  }
-}
+**One-command install:**
+```bash
+npx stx402-agent@latest --install
 ```
+
+This automatically configures `~/.claude.json` with the MCP server. The `@latest` tag ensures users always get the newest features.
+
+**For mainnet:** `npx stx402-agent@latest --install --mainnet`
 
 **Note:** `CLIENT_MNEMONIC` is optional. Users can either:
 1. **Managed wallets (recommended)**: Use `wallet_create` or `wallet_import` to generate/import wallets with password protection
