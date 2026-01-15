@@ -69,7 +69,7 @@ if (process.argv.includes("--install") || process.argv.includes("install")) {
   // Normal MCP server mode
   const server = new McpServer({
     name: "stx402-agent",
-    version: "2.5.0",
+    version: "2.6.0",
   });
 
   // Register all tools from the modular registry
