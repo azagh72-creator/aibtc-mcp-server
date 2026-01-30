@@ -436,6 +436,7 @@ WARNING: Only use this in a secure environment! Anyone with the mnemonic can acc
               id: wallet.id,
               name: wallet.name,
               address: wallet.address,
+              btcAddress: wallet.btcAddress,
               network: wallet.network,
             };
           }
@@ -453,6 +454,7 @@ WARNING: Only use this in a secure environment! Anyone with the mnemonic can acc
           response.wallet = {
             id: sessionInfo.walletId,
             address: sessionInfo.address,
+            btcAddress: sessionInfo.btcAddress,
             sessionExpiresAt: sessionInfo.expiresAt?.toISOString() || "never",
           };
         } else if (activeWallet) {
@@ -465,6 +467,7 @@ WARNING: Only use this in a secure environment! Anyone with the mnemonic can acc
             id: w.id,
             name: w.name,
             address: w.address,
+            btcAddress: w.btcAddress,
           }));
         }
 
