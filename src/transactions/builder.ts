@@ -11,6 +11,7 @@ import { getStacksNetwork, getApiBaseUrl, type Network } from "../config/network
 
 export interface Account {
   address: string;
+  btcAddress?: string;
   privateKey: string;
   network: Network;
 }

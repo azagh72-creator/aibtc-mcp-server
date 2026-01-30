@@ -31,13 +31,14 @@ async function migrateStorage(): Promise<void> {
 }
 
 /**
- * 
+ *
  * Wallet metadata (stored in index, no sensitive data)
  */
 export interface WalletMetadata {
   id: string;
   name: string;
   address: string;
+  btcAddress?: string;
   network: Network;
   createdAt: string;
   lastUsed?: string;
