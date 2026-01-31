@@ -31,22 +31,28 @@ npm start         # Run compiled server
 
 ## Publishing & Releases
 
-**After major changes or version updates, publish a new release:**
+**This repo uses [Release Please](https://github.com/googleapis/release-please) for automated releases.**
 
-```bash
-npm version patch   # or minor/major depending on changes
-git push && git push --tags
-```
+### How It Works
 
-This triggers GitHub Actions to automatically:
-1. Build the project
-2. Publish to npm
-3. Create a GitHub release with changelog
+1. Merge PRs to main with conventional commits (`feat:`, `fix:`, `docs:`, etc.)
+2. Release Please auto-creates/updates a "Release PR" with pending changelog
+3. Merge the Release PR when ready to ship
+4. GitHub Actions automatically:
+   - Bumps version in package.json
+   - Generates CHANGELOG.md
+   - Creates git tag
+   - Publishes to npm and GitHub Packages
+   - Publishes skill to ClawHub
 
-**Version Guidelines:**
-- `patch` (2.6.0 → 2.6.1): Bug fixes, CI changes, docs
-- `minor` (2.6.0 → 2.7.0): New features, new tools
-- `major` (2.6.0 → 3.0.0): Breaking changes
+### Commit Types → Version Bumps
+
+| Commit Type | Version Bump | Example |
+|-------------|--------------|---------|
+| `fix:` | Patch (1.7.0 → 1.7.1) | Bug fixes |
+| `feat:` | Minor (1.7.0 → 1.8.0) | New features, new tools |
+| `feat!:` or `BREAKING CHANGE:` | Major (1.7.0 → 2.0.0) | Breaking changes |
+| `docs:`, `chore:`, `ci:` | No bump | Non-code changes |
 
 ## Code Principles
 
