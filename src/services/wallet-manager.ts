@@ -259,16 +259,18 @@ class WalletManager {
     const address = getStxAddress(stacksAccount, walletMeta.network);
 
     // Derive Bitcoin key pair (includes private key for signing)
-    const { address: btcAddress, privateKey: btcPrivateKey } = deriveBitcoinKeyPair(
-      mnemonic,
-      walletMeta.network
-    );
+    const {
+      address: btcAddress,
+      privateKey: btcPrivateKey,
+      publicKeyBytes: btcPublicKey,
+    } = deriveBitcoinKeyPair(mnemonic, walletMeta.network);
 
     const account: Account = {
       address,
       btcAddress,
       privateKey: stacksAccount.stxPrivateKey,
       btcPrivateKey,
+      btcPublicKey,
       network: walletMeta.network,
     };
 

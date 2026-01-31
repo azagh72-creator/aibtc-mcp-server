@@ -1,12 +1,14 @@
 /**
- * Bitcoin L1 read-only tools
+ * Bitcoin L1 tools
  *
- * These tools provide read-only access to Bitcoin blockchain data:
+ * These tools provide Bitcoin blockchain operations:
  * - get_btc_balance: Check BTC balance for an address
  * - get_btc_fees: Get current fee estimates
  * - get_btc_utxos: List UTXOs for an address
+ * - transfer_btc: Send BTC to a recipient address
  *
- * All data is fetched from mempool.space API (no authentication required).
+ * Data is fetched from mempool.space API (no authentication required).
+ * Transfer operations require an unlocked wallet.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -17,8 +19,10 @@ import { getWalletManager } from "../services/wallet-manager.js";
 import {
   MempoolApi,
   getMempoolAddressUrl,
+  getMempoolTxUrl,
   type UTXO,
 } from "../services/mempool-api.js";
+import { buildAndSignBtcTransaction } from "../transactions/bitcoin-builder.js";
 
 /**
  * Get the Bitcoin address to use for queries.
@@ -221,6 +225,131 @@ export function registerBitcoinTools(server: McpServer): void {
             unconfirmedCount: utxos.filter((u) => !u.status.confirmed).length,
           },
           explorerUrl: getMempoolAddressUrl(btcAddress, NETWORK),
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // Transfer BTC
+  server.registerTool(
+    "transfer_btc",
+    {
+      description:
+        "Transfer BTC to a recipient address. " +
+        "Builds, signs, and broadcasts a Bitcoin transaction. " +
+        "Requires an unlocked wallet with BTC balance.",
+      inputSchema: {
+        recipient: z
+          .string()
+          .describe(
+            "Bitcoin address to send to (bc1... for mainnet, tb1... for testnet)"
+          ),
+        amount: z
+          .number()
+          .int()
+          .positive()
+          .describe("Amount to send in satoshis (1 BTC = 100,000,000 satoshis)"),
+        feeRate: z
+          .union([
+            z.enum(["fast", "medium", "slow"]),
+            z.number().int().positive(),
+          ])
+          .optional()
+          .default("medium")
+          .describe(
+            "Fee rate: 'fast' (~10 min), 'medium' (~30 min), 'slow' (~1 hr), or number in sat/vB"
+          ),
+      },
+    },
+    async ({ recipient, amount, feeRate }) => {
+      try {
+        // Get wallet account (requires unlocked wallet)
+        const walletManager = getWalletManager();
+        const account = walletManager.getActiveAccount();
+
+        if (!account) {
+          throw new Error(
+            "Wallet is not unlocked. Use wallet_unlock first to enable transactions."
+          );
+        }
+
+        if (!account.btcAddress || !account.btcPrivateKey || !account.btcPublicKey) {
+          throw new Error(
+            "Bitcoin keys not available. Please unlock your wallet again."
+          );
+        }
+
+        // Initialize mempool API
+        const api = new MempoolApi(NETWORK);
+
+        // Fetch UTXOs
+        const utxos = await api.getUtxos(account.btcAddress);
+        if (utxos.length === 0) {
+          throw new Error(`No UTXOs found for address ${account.btcAddress}`);
+        }
+
+        // Resolve fee rate
+        let resolvedFeeRate: number;
+        if (typeof feeRate === "number") {
+          resolvedFeeRate = feeRate;
+        } else {
+          const feeTiers = await api.getFeeTiers();
+          switch (feeRate) {
+            case "fast":
+              resolvedFeeRate = feeTiers.fast;
+              break;
+            case "slow":
+              resolvedFeeRate = feeTiers.slow;
+              break;
+            case "medium":
+            default:
+              resolvedFeeRate = feeTiers.medium;
+              break;
+          }
+        }
+
+        // Build and sign the transaction
+        const txResult = buildAndSignBtcTransaction(
+          {
+            utxos,
+            recipient,
+            amount,
+            feeRate: resolvedFeeRate,
+            senderPubKey: account.btcPublicKey,
+            senderAddress: account.btcAddress,
+            network: NETWORK,
+          },
+          account.btcPrivateKey
+        );
+
+        // Broadcast the transaction
+        const txid = await api.broadcastTransaction(txResult.txHex);
+
+        return createJsonResponse({
+          success: true,
+          txid,
+          explorerUrl: getMempoolTxUrl(txid, NETWORK),
+          transaction: {
+            recipient,
+            amount: {
+              satoshis: amount,
+              btc: formatBtc(amount),
+            },
+            fee: {
+              satoshis: txResult.fee,
+              btc: formatBtc(txResult.fee),
+              rateUsed: `${resolvedFeeRate} sat/vB`,
+            },
+            change: {
+              satoshis: txResult.change,
+              btc: formatBtc(txResult.change),
+            },
+            vsize: txResult.vsize,
+          },
+          sender: account.btcAddress,
+          network: NETWORK,
         });
       } catch (error) {
         return createErrorResponse(error);

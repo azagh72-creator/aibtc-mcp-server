@@ -33,6 +33,11 @@ export interface BitcoinKeyPair extends BitcoinAddress {
    * SECURITY: Never serialize to WIF/hex. Use only for signing.
    */
   privateKey: Uint8Array;
+  /**
+   * Public key as raw bytes (33 bytes compressed)
+   * Used for building P2WPKH transactions.
+   */
+  publicKeyBytes: Uint8Array;
 }
 
 /**
@@ -175,7 +180,8 @@ export function deriveBitcoinKeyPair(
     throw new Error("Failed to derive private key");
   }
 
-  // Get compressed public key as hex string
+  // Get compressed public key as hex string and bytes
+  const publicKeyBytes = new Uint8Array(derivedKey.publicKey);
   const publicKey = Buffer.from(derivedKey.publicKey).toString("hex");
 
   // Get private key as Uint8Array (never convert to WIF/hex)
@@ -193,5 +199,6 @@ export function deriveBitcoinKeyPair(
     address: p2wpkh.address,
     publicKey,
     privateKey,
+    publicKeyBytes,
   };
 }

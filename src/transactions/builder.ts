@@ -18,6 +18,10 @@ export interface Account {
    * SECURITY: Never serialize to WIF/hex. Only held in memory during session.
    */
   btcPrivateKey?: Uint8Array;
+  /**
+   * Bitcoin public key as raw bytes (33 bytes compressed) for building transactions.
+   */
+  btcPublicKey?: Uint8Array;
   network: Network;
 }
 
