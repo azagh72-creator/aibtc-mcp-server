@@ -1,5 +1,8 @@
 # @aibtc/mcp-server
 
+[![npm version](https://img.shields.io/npm/v/@aibtc/mcp-server.svg)](https://www.npmjs.com/package/@aibtc/mcp-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 An MCP (Model Context Protocol) server that gives Claude its own Stacks wallet to interact with the blockchain and x402 paid API endpoints.
 
 ## Features
@@ -353,6 +356,34 @@ For automated setups where Claude needs immediate wallet access, set the `CLIENT
 
 This bypasses the wallet creation flow - Claude has immediate access to transact.
 
+## Agent Skill
+
+This package includes an [Agent Skills](https://agentskills.io) compatible skill that teaches any LLM how to use the Bitcoin wallet capabilities effectively.
+
+### What is it?
+
+The `aibtc-bitcoin-wallet` skill provides:
+- Structured workflows for Bitcoin L1 operations (balance, send, fees)
+- Reference guides for Pillar smart wallets and Stacks L2 DeFi
+- LLM-agnostic instructions that work with Claude Code, Cursor, Codex, and 20+ other tools
+
+### Using the Skill
+
+The skill is automatically included when you install the MCP server. Find it at:
+- **Local**: `node_modules/@aibtc/mcp-server/skill/SKILL.md`
+- **ClawHub**: [clawhub.ai/skills](https://www.clawhub.ai/skills) - search for `aibtc-bitcoin-wallet`
+
+### Skill Structure
+
+```
+skill/
+├── SKILL.md                    # Bitcoin L1 core workflows
+└── references/
+    ├── pillar-wallet.md        # Pillar smart wallet guide
+    ├── stacks-defi.md          # Stacks L2 / DeFi operations
+    └── troubleshooting.md      # Common issues and solutions
+```
+
 ## Development
 
 ```bash
@@ -362,6 +393,17 @@ npm install
 npm run build
 npm run dev       # Run with tsx (development)
 ```
+
+### Repository Secrets (Maintainers)
+
+The following secrets are required for the release workflow:
+
+| Secret | Description |
+|--------|-------------|
+| `NPM_TOKEN` | npm publish token for @aibtc scope |
+| `CLAWHUB_API_TOKEN` | ClawHub API token for skill publishing |
+
+To obtain a ClawHub API token, visit [clawhub.ai](https://www.clawhub.ai) and create an account.
 
 ## License
 
