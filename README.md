@@ -101,7 +101,7 @@ Claude's wallets are stored locally on your machine:
 - Mnemonics never stored in plaintext
 - File permissions set to owner-only (0600)
 
-## Bitcoin Address Derivation
+## Bitcoin L1 Support
 
 Each wallet automatically derives both a **Stacks address** and a **Bitcoin address** from the same mnemonic using BIP39/BIP32 standards.
 
@@ -113,11 +113,11 @@ Each wallet automatically derives both a **Stacks address** and a **Bitcoin addr
 - Mainnet: `bc1q...` (Native SegWit P2WPKH)
 - Testnet: `tb1q...` (Native SegWit P2WPKH)
 
-**Current Support:**
-- Read-only Bitcoin address derivation
-- Same mnemonic produces both Stacks and Bitcoin addresses
-- Bitcoin address included in wallet status and info
-- No Bitcoin signing or transaction support (yet)
+**Capabilities:**
+- Full Bitcoin L1 transaction support (send BTC)
+- Balance and UTXO queries via mempool.space API
+- Fee estimation (fast/medium/slow)
+- P2WPKH (native SegWit) transactions for optimal fees
 
 **Example:**
 ```
@@ -125,6 +125,9 @@ You: Create a wallet called "my-wallet"
 Claude: I've created a wallet with:
         Stacks address: ST1ABC...
         Bitcoin address: bc1q...
+
+You: Send 50000 sats to bc1q...
+Claude: Done! Transaction broadcast: abc123...
 ```
 
 Both addresses are derived from the same recovery phrase, making it easy to manage both Layer 1 (Bitcoin) and Layer 2 (Stacks) assets.
@@ -233,6 +236,29 @@ Supports 10 assets: sBTC, aeUSDC, stSTX, wSTX, USDH, sUSDT, USDA, DIKO, ALEX, st
 | `zest_withdraw` | Withdraw supplied assets |
 | `zest_borrow` | Borrow against collateral |
 | `zest_repay` | Repay borrowed assets |
+
+### DeFi - Bitflow DEX (Mainnet)
+
+DEX aggregator that routes trades across multiple liquidity sources.
+
+| Tool | Description |
+|------|-------------|
+| `bitflow_get_ticker` | Get market data (no API key needed) |
+| `bitflow_get_quote` | Get swap quote |
+| `bitflow_swap` | Execute token swap |
+
+### Pillar Smart Wallet
+
+sBTC smart wallet with Zest Protocol integration and passkey authentication.
+
+| Tool | Description |
+|------|-------------|
+| `pillar_connect` | Connect to Pillar wallet |
+| `pillar_send` | Send sBTC to BNS names or addresses |
+| `pillar_boost` | Create leveraged sBTC position |
+| `pillar_position` | View wallet and Zest position |
+
+For autonomous agents, use `pillar_direct_*` tools (no browser needed).
 
 ### Blockchain Queries
 | Tool | Description |
@@ -394,9 +420,15 @@ npm run build
 npm run dev       # Run with tsx (development)
 ```
 
-### Repository Secrets (Maintainers)
+### Releases
 
-The following secrets are required for the release workflow:
+This repo uses [Release Please](https://github.com/googleapis/release-please) for automated releases:
+
+1. Merge PRs with conventional commits (`feat:`, `fix:`, etc.)
+2. Release Please creates a Release PR with changelog
+3. Merge the Release PR to publish
+
+### Repository Secrets (Maintainers)
 
 | Secret | Description |
 |--------|-------------|

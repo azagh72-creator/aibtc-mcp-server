@@ -75,15 +75,15 @@ Claude Code
     ↓ (MCP stdio transport)
 aibtc-mcp-server MCP Server (src/index.ts)
     ↓
-┌─────────────────────────────────────────────────────────┐
-│  x402 Endpoints                          Stacks TX      │
-│  (via api.ts)                         (via wallet.ts)   │
-│  ┌─────────────┐  ┌─────────────┐                       │
-│  │x402.biwas.xyz│  │ stx402.com  │                       │
-│  └─────────────┘  └─────────────┘                       │
-└─────────────────────────────────────────────────────────┘
-         ↓                    ↓                    ↓
-   x402 API Server     x402 API Server     Stacks Blockchain
+┌──────────────────────────────────────────────────────────────────────┐
+│  x402 Endpoints                                       Stacks TX      │
+│  (via api.ts)                                      (via wallet.ts)   │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐                 │
+│  │x402.biwas.xyz│  │x402.aibtc.com│  │ stx402.com  │                 │
+│  └──────────────┘  └──────────────┘  └─────────────┘                 │
+└──────────────────────────────────────────────────────────────────────┘
+         ↓                   ↓                  ↓                ↓
+   x402 API Server    x402 API Server    x402 API Server   Stacks Blockchain
 ```
 
 ### Key Files
@@ -96,7 +96,7 @@ aibtc-mcp-server MCP Server (src/index.ts)
 - `src/services/bitflow.service.ts` - Bitflow DEX integration (via @bitflowlabs/core-sdk)
 - `src/services/mempool-api.ts` - mempool.space API client for Bitcoin UTXO, fee, and broadcast
 - `src/transactions/bitcoin-builder.ts` - Bitcoin transaction building and signing (P2WPKH)
-- `src/endpoints/registry.ts` - Known x402 endpoint registry from both API sources
+- `src/endpoints/registry.ts` - Known x402 endpoint registry from all three API sources
 - `src/services/bns.service.ts` - BNS name resolution (supports both V1 and V2)
 - `src/services/hiro-api.ts` - Hiro API client + BNS V2 API client
 - `src/config/contracts.ts` - Contract addresses and Zest asset configuration (LP tokens, oracles, decimals)
@@ -605,50 +605,3 @@ This package includes an Agent Skills-compatible skill at `skill/SKILL.md`. The 
 
 When implementing Bitcoin wallet features, consult the skill for standardized patterns and workflows.
 
----
-
-## Knowledge Base References
-
-Use the local knowledge base for Stacks/Clarity and protocol guidance: `/Users/biwas/claudex402/claude-knowledge`
-
-### Quick Reference (Nuggets)
-Fast lookups for common facts and gotchas:
-
-- `nuggets/stacks.md` - Tenero API, SIWS, SIP-018 signing standards quick reference
-- `nuggets/clarity.md` - Core principles, gotchas, error handling, testing commands
-- `nuggets/cloudflare.md` - Worker deployment best practices (prefer CI/CD over direct deploy)
-- `nuggets/github.md` - GitHub API, Actions, and Pages workflows
-
-### Deep Reference (Context)
-Comprehensive documentation for detailed guidance:
-
-- `context/clarity-reference.md` - Complete Clarity language reference
-- `context/siws-guide.md` and `context/sip-siws.md` - SIWS auth flows and implementation
-- `context/sip-018.md` - Signed Structured Data standard for on-chain verification
-- `context/tenero-api.md` and `downloads/2025-01-06-tenero-openapi-spec.json` - Market data APIs
-
-### Patterns & Best Practices
-Reusable code patterns and architectural guidance:
-
-- `patterns/clarity-patterns.md` - Comprehensive Clarity code patterns (public functions, events, error handling, bit flags, multi-send, whitelisting, DAO proposals, fixed-point math, treasury patterns)
-- `patterns/clarity-testing.md` - Testing tooling and patterns for Clarity contracts
-- `patterns/skill-organization.md` - Three-layer pattern (SKILL → RUNBOOK → HELPERS) for maintainable workflows
-
-### Architectural Decisions
-Design principles and workflow patterns:
-
-- `decisions/0002-clarity-design-principles.md` - Contract design rules, security patterns, Clarity 4 features
-- `decisions/0001-workflow-component-design.md` - Development workflow component patterns (OODA loop, planning flows, composable workflows)
-
-### Runbooks
-Step-by-step operational guides:
-
-- `runbook/clarity-development.md` - Clarity dev workflows and checklists
-- `runbook/cloudflare-scaffold.md` - Cloudflare Worker setup, wrangler config, credentials, deployment patterns
-- `runbook/aibtc-shared-logger.md` - Shared logging utilities for AIBTC services
-- `runbook/daily-summary.md` - Daily summary generation workflow
-- `runbook/setup-github-pat.md` - GitHub Personal Access Token setup
-- `runbook/setup-sprout-cron.md` - Sprout documentation cron job setup
-- `runbook/sprout-docs-inline.md` - Sprout documentation system overview
-- `runbook/sprout-docs-github-pages.md` - Documentation site deployment with GitHub Pages
-- `runbook/updating-claude-knowledge.md` - Knowledge base maintenance and sanitization guidelines
