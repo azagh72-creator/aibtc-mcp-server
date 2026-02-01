@@ -8,11 +8,10 @@
 
 import { getWalletManager } from "../services/wallet-manager.js";
 import { getZestProtocolService } from "../services/defi.service.js";
-import { getHiroApi } from "../services/hiro-api.js";
 import { ZEST_ASSETS } from "../config/contracts.js";
 import { NETWORK } from "../config/networks.js";
 import type { Account } from "../transactions/builder.js";
-import { redactSensitive } from "../utils/redact.js";
+import { redactSensitive, getSbtcBalance } from "../utils/index.js";
 import fs from "fs";
 import fsPromises from "fs/promises";
 import path from "path";
@@ -33,6 +32,13 @@ interface YieldHunterConfig {
   asset: string;
 }
 
+/**
+ * Default configuration for CLI yield hunter daemon.
+ *
+ * Note: The CLI daemon deposits the full wallet balance when above threshold.
+ * For fee buffer functionality (reserving sats for tx costs), use the MCP tools
+ * version via yield_hunter_start which has feeBuffer configuration.
+ */
 const DEFAULT_CONFIG: YieldHunterConfig = {
   minDepositThreshold: 10_000n, // 0.0001 sBTC (~$10 at $100k BTC)
   checkIntervalMs: 10 * 60 * 1000, // 10 minutes
@@ -108,28 +114,11 @@ function log(message: string): void {
 // Core Logic
 // ============================================================================
 
-async function getSbtcBalance(address: string): Promise<bigint> {
-  const hiro = getHiroApi(NETWORK);
-  const balances = await hiro.getAccountBalances(address);
-
-  // Find sBTC in fungible tokens
-  const sbtcToken = ZEST_ASSETS.sBTC.token;
-  const sbtcKey = Object.keys(balances.fungible_tokens || {}).find(
-    (key) => key.startsWith(sbtcToken)
-  );
-
-  if (sbtcKey && balances.fungible_tokens[sbtcKey]) {
-    return BigInt(balances.fungible_tokens[sbtcKey].balance);
-  }
-
-  return 0n;
-}
-
 async function runCheck(account: Account, config: YieldHunterConfig, state: YieldHunterState): Promise<void> {
   const zest = getZestProtocolService(NETWORK);
 
   // Get current sBTC balance in wallet
-  const walletBalance = await getSbtcBalance(account.address);
+  const walletBalance = await getSbtcBalance(account.address, NETWORK);
   log(`Wallet sBTC balance: ${formatSats(walletBalance)}`);
 
   // Get current Zest position
@@ -286,7 +275,7 @@ async function showStatus(): Promise<void> {
       log(`  Borrowed: ${formatSats(BigInt(position.borrowed))}`);
     }
 
-    const walletBalance = await getSbtcBalance(activeWallet.address);
+    const walletBalance = await getSbtcBalance(activeWallet.address, NETWORK);
     log(`\nWallet sBTC: ${formatSats(walletBalance)}`);
   }
 }

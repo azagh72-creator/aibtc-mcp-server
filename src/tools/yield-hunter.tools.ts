@@ -5,14 +5,25 @@ import { getAccount, getWalletAddress, NETWORK } from "../services/x402.service.
 import { getZestProtocolService } from "../services/defi.service.js";
 import { getHiroApi } from "../services/hiro-api.js";
 import { ZEST_ASSETS, MAINNET_CONTRACTS } from "../config/contracts.js";
-import { createJsonResponse, createErrorResponse } from "../utils/index.js";
+import { createJsonResponse, createErrorResponse, getSbtcBalance } from "../utils/index.js";
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-/** Buffer to keep for x402 fees + tx costs (in sats). ~0.0005 sBTC = 50k sats */
-const FEE_BUFFER_SATS = 50_000n;
+/**
+ * Fee buffer to reserve for transaction costs (in satoshis).
+ *
+ * This buffer ensures the agent always has funds to pay for Stacks transaction
+ * fees (~2-10 sats per transaction). The yield hunter only performs on-chain
+ * supply transactions - it does not call any x402 endpoints.
+ *
+ * Default: 1,000 sats (0.00001 sBTC, ~$1 at $100k BTC)
+ * - Covers 100-500 Stacks transactions
+ *
+ * Customize via yield_hunter_start or yield_hunter_configure feeBuffer parameter.
+ */
+const FEE_BUFFER_SATS = 1_000n;
 
 /** Maximum retries for failed transactions */
 const MAX_RETRIES = 3;
@@ -112,22 +123,6 @@ function formatApy(bps: number): string {
 // Core Yield Hunting Logic
 // ============================================================================
 
-async function getSbtcBalance(address: string): Promise<bigint> {
-  const hiro = getHiroApi(NETWORK);
-  const balances = await hiro.getAccountBalances(address);
-
-  const sbtcToken = ZEST_ASSETS.sBTC.token;
-  const sbtcKey = Object.keys(balances.fungible_tokens || {}).find((key) =>
-    key.startsWith(sbtcToken)
-  );
-
-  if (sbtcKey && balances.fungible_tokens[sbtcKey]) {
-    return BigInt(balances.fungible_tokens[sbtcKey].balance);
-  }
-
-  return 0n;
-}
-
 /**
  * Fetch live APY from Zest Protocol on-chain
  * Reads from pool-0-reserve get-reserve-state
@@ -151,7 +146,8 @@ async function fetchZestApy(): Promise<number> {
     }
 
     const decoded = cvToJSON(hexToCV(result.result));
-    const data = decoded?.value || decoded;
+    // Response is (response (tuple ...)) so we need .value.value to get the tuple fields
+    const data = decoded?.value?.value || decoded?.value || decoded;
 
     // Extract liquidity rate (APY in 1e8 scale)
     // e.g., 5000000 = 5% APY
@@ -271,7 +267,7 @@ async function runYieldCheck(): Promise<void> {
 
     // Get current sBTC balance in wallet
     const walletBalance = await executeWithRetry(
-      () => getSbtcBalance(account.address),
+      () => getSbtcBalance(account.address, NETWORK),
       "Fetch wallet balance"
     );
     addLog("info", `Wallet sBTC: ${formatSats(walletBalance)}`);
@@ -372,7 +368,7 @@ Only works on mainnet (Zest Protocol is mainnet-only).
 
 Default settings:
 - Deposit threshold: 10,000 sats (0.0001 sBTC)
-- Fee buffer: 50,000 sats (0.0005 sBTC) - kept for x402 fees + tx costs
+- Fee buffer: 1,000 sats (0.00001 sBTC) - kept for Stacks tx fees
 - Check interval: 10 minutes`,
       inputSchema: {
         threshold: z
@@ -385,7 +381,7 @@ Default settings:
           .string()
           .optional()
           .describe(
-            "sBTC (in sats) to keep for fees, never deposited. Default: 50000"
+            "sBTC (in sats) to keep for fees, never deposited. Default: 1000"
           ),
         interval: z
           .number()
@@ -672,7 +668,7 @@ async function getFullStatus() {
       // Fetch all data in parallel
       const [position, walletBalance, apy] = await Promise.all([
         zest.getUserPosition(ZEST_ASSETS.sBTC.token, address),
-        getSbtcBalance(address),
+        getSbtcBalance(address, NETWORK),
         fetchZestApy(),
       ]);
 
