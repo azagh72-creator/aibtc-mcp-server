@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAccount, getWalletAddress, NETWORK } from "../services/x402.service.js";
 import { getSbtcService } from "../services/sbtc.service.js";
 import { getExplorerTxUrl } from "../config/networks.js";
-import { createJsonResponse, createErrorResponse } from "../utils/index.js";
+import { createJsonResponse, createErrorResponse, resolveFee } from "../utils/index.js";
 
 export function registerSbtcTools(server: McpServer): void {
   // Get sBTC balance
@@ -50,13 +50,18 @@ Example: To send 0.001 sBTC, use amount "100000" (satoshis).`,
         recipient: z.string().describe("The recipient's Stacks address"),
         amount: z.string().describe("Amount in satoshis (0.00000001 sBTC). Example: '100000' for 0.001 sBTC"),
         memo: z.string().optional().describe("Optional memo message"),
+        fee: z
+          .string()
+          .optional()
+          .describe("Optional fee: 'low' | 'medium' | 'high' preset or micro-STX amount. If omitted, auto-estimated."),
       },
     },
-    async ({ recipient, amount, memo }) => {
+    async ({ recipient, amount, memo, fee }) => {
       try {
         const sbtcService = getSbtcService(NETWORK);
         const account = await getAccount();
-        const result = await sbtcService.transfer(account, recipient, BigInt(amount), memo);
+        const resolvedFee = await resolveFee(fee, NETWORK, "contract_call");
+        const result = await sbtcService.transfer(account, recipient, BigInt(amount), memo, resolvedFee);
 
         const btcAmount = (BigInt(amount) / BigInt(100_000_000)).toString();
 

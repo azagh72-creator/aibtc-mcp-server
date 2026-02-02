@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAccount, getWalletAddress, NETWORK } from "../services/x402.service.js";
 import { getTokensService } from "../services/tokens.service.js";
 import { getExplorerTxUrl } from "../config/networks.js";
-import { createJsonResponse, createErrorResponse } from "../utils/index.js";
+import { createJsonResponse, createErrorResponse, resolveFee } from "../utils/index.js";
 
 export function registerTokenTools(server: McpServer): void {
   // Get token balance
@@ -61,13 +61,18 @@ Or use the full contract ID.`,
         recipient: z.string().describe("The recipient's Stacks address"),
         amount: z.string().describe("Amount in smallest unit (depends on token decimals)"),
         memo: z.string().optional().describe("Optional memo message (max 34 bytes)"),
+        fee: z
+          .string()
+          .optional()
+          .describe("Optional fee: 'low' | 'medium' | 'high' preset or micro-STX amount. If omitted, auto-estimated."),
       },
     },
-    async ({ token, recipient, amount, memo }) => {
+    async ({ token, recipient, amount, memo, fee }) => {
       try {
         const tokensService = getTokensService(NETWORK);
         const account = await getAccount();
-        const result = await tokensService.transfer(account, token, recipient, BigInt(amount), memo);
+        const resolvedFee = await resolveFee(fee, NETWORK, "contract_call");
+        const result = await tokensService.transfer(account, token, recipient, BigInt(amount), memo, resolvedFee);
 
         return createJsonResponse({
           success: true,

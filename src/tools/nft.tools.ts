@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAccount, getWalletAddress, NETWORK } from "../services/x402.service.js";
 import { getNftService } from "../services/nft.service.js";
 import { getExplorerTxUrl } from "../config/networks.js";
-import { createJsonResponse, createErrorResponse } from "../utils/index.js";
+import { createJsonResponse, createErrorResponse, resolveFee } from "../utils/index.js";
 
 export function registerNftTools(server: McpServer): void {
   // Get NFT holdings
@@ -78,13 +78,18 @@ export function registerNftTools(server: McpServer): void {
         contractId: z.string().describe("NFT collection contract ID"),
         tokenId: z.number().describe("Token ID of the NFT to transfer"),
         recipient: z.string().describe("The recipient's Stacks address"),
+        fee: z
+          .string()
+          .optional()
+          .describe("Optional fee: 'low' | 'medium' | 'high' preset or micro-STX amount. If omitted, auto-estimated."),
       },
     },
-    async ({ contractId, tokenId, recipient }) => {
+    async ({ contractId, tokenId, recipient, fee }) => {
       try {
         const nftService = getNftService(NETWORK);
         const account = await getAccount();
-        const result = await nftService.transfer(account, contractId, tokenId, recipient);
+        const resolvedFee = await resolveFee(fee, NETWORK, "contract_call");
+        const result = await nftService.transfer(account, contractId, tokenId, recipient, resolvedFee);
 
         return createJsonResponse({
           success: true,
