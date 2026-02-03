@@ -96,6 +96,7 @@ aibtc-mcp-server MCP Server (src/index.ts)
 - `src/services/defi.service.ts` - ALEX DEX (via alex-sdk) and Zest Protocol integrations
 - `src/services/bitflow.service.ts` - Bitflow DEX integration (via @bitflowlabs/core-sdk)
 - `src/services/mempool-api.ts` - mempool.space API client for Bitcoin UTXO, fee, and broadcast
+- `src/services/ordinal-indexer.ts` - Ordinal UTXO classification using Hiro Ordinals API
 - `src/transactions/bitcoin-builder.ts` - Bitcoin transaction building and signing (P2WPKH)
 - `src/endpoints/registry.ts` - Known x402 endpoint registry from all three API sources
 - `src/tools/signing.tools.ts` - Message signing tools (SIP-018, SIWS, BIP-137)
@@ -121,6 +122,32 @@ The agent supports both BNS naming systems:
 | BNS V2 | `api.bnsv2.com/names/{name}` | Current system (most .btc names) |
 
 BNS tools automatically check V2 first for `.btc` names, falling back to V1 for legacy support.
+
+### Ordinal Indexer Service
+
+The ordinal indexer classifies Bitcoin UTXOs as cardinal (safe to spend) or ordinal (contains inscriptions).
+
+**Data Sources:**
+| API | Purpose | Auth |
+|-----|---------|------|
+| Hiro Ordinals API | Fetch inscriptions for address, returns `output` (txid:vout) | Free, mainnet only |
+| mempool.space API | Fetch all UTXOs for address | Free |
+
+**Classification Algorithm:**
+1. Fetch all UTXOs from mempool.space
+2. Fetch all inscriptions from Hiro Ordinals API (paginated)
+3. Build set of outputs containing inscriptions: `txid:vout`
+4. Match UTXOs against inscription outputs:
+   - If UTXO output matches inscription → **Ordinal** (do not spend)
+   - Otherwise → **Cardinal** (safe to spend)
+
+**Limitations:**
+- Mainnet only (Hiro Ordinals API does not index testnet)
+- Does not classify runes (requires Best In Slot API or alternative)
+
+**Tools:**
+- `get_cardinal_utxos` - Returns UTXOs safe for regular transfers
+- `get_ordinal_utxos` - Returns UTXOs containing inscriptions
 
 ### x402 Payment Flow
 
@@ -177,6 +204,8 @@ Tools for Bitcoin L1 blockchain operations via mempool.space API:
 - `get_btc_balance` - Get BTC balance for any Bitcoin address (total, confirmed, unconfirmed)
 - `get_btc_fees` - Get current fee estimates (fast ~10min, medium ~30min, slow ~1hr) in sat/vB
 - `get_btc_utxos` - List UTXOs for a Bitcoin address (useful for debugging/transparency)
+- `get_cardinal_utxos` - List cardinal UTXOs (safe to spend - no inscriptions, mainnet only)
+- `get_ordinal_utxos` - List ordinal UTXOs (contain inscriptions - do not spend, mainnet only)
 
 **Write Operations:**
 - `transfer_btc` - Transfer BTC to a recipient address (requires unlocked wallet)
@@ -614,15 +643,37 @@ Signing keys are stored encrypted in `~/.aibtc/signing-keys/`:
 
 **Bitcoin-First Principle**: When users ask about "their wallet" or "their balance" without specifying a chain, default to Bitcoin (L1). Only use Stacks L2 operations when users explicitly mention STX, Stacks, or L2-specific features (smart contracts, DeFi, tokens, NFTs).
 
+**Ordinal Safety Principle**: The `transfer_btc` tool automatically protects users from accidentally destroying valuable inscriptions by using only cardinal UTXOs (safe to spend - no inscriptions) by default. Users must explicitly set `includeOrdinals=true` to override this safety. Never suggest using `includeOrdinals=true` unless the user explicitly wants to spend ordinal UTXOs.
+
 When a user asks for something:
 
 1. **For "what's my balance?"** → Use `get_btc_balance` first (Bitcoin-first)
-2. **For "send X BTC to Y"** → Use `transfer_btc` (wallet must be unlocked)
+2. **For "send X BTC to Y"** → Use `transfer_btc` (wallet must be unlocked, uses cardinal UTXOs only)
 3. **For "transfer X STX to Y"** → Use `transfer_stx` directly
 4. **For known x402 endpoints** → Use `list_x402_endpoints` to find relevant endpoint, then `execute_x402_endpoint`
 5. **For any x402 URL** → Use `execute_x402_endpoint` with full `url` parameter - works with ANY x402-compatible endpoint
 6. **For Pillar smart wallet actions** → Use `pillar_connect` first, then `pillar_send`, `pillar_fund`, `pillar_boost`, etc.
 7. **For unknown actions** → Ask user for the x402 endpoint URL or check if it's a direct blockchain action
+
+### Ordinal Safety
+
+Bitcoin inscriptions (ordinals) are valuable digital artifacts stored in transaction witness data. Accidentally spending a UTXO containing an inscription destroys the inscription forever.
+
+**Default Protection:**
+- `transfer_btc` uses cardinal UTXOs (no inscriptions) by default on mainnet
+- On testnet, uses all UTXOs (Hiro Ordinals API is mainnet-only)
+- If no cardinal UTXOs available, transaction fails with helpful error message
+
+**Power User Override:**
+- Set `includeOrdinals=true` to allow spending ordinal UTXOs
+- Only suggest this if user explicitly wants to spend inscriptions
+- Warn users that this may destroy valuable inscriptions
+
+**Ordinal Management:**
+- `get_inscriptions_by_address` - List all inscriptions owned by an address
+- `get_cardinal_utxos` - UTXOs safe to spend (no inscriptions)
+- `get_ordinal_utxos` - UTXOs containing inscriptions (do not spend)
+- `get_inscription` - Fetch and parse inscription content from reveal transaction
 
 ### Example User Requests
 
