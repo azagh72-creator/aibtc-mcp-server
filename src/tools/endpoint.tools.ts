@@ -1,13 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { createApiClient, createPlainClient, API_URL, probeEndpoint, formatPaymentAmount, type ProbeResult } from "../services/x402.service.js";
+import { createApiClient, createPlainClient, API_URL, probeEndpoint, formatPaymentAmount, type ProbeResult, checkSufficientBalance, generateDedupKey, checkDedupCache, recordTransaction, getAccount } from "../services/x402.service.js";
 import {
   ALL_ENDPOINTS,
   searchEndpoints,
   formatEndpointsTable,
   getEndpointsBySource,
   getCategories,
-  lookupEndpoint,
 } from "../endpoints/registry.js";
 import { createJsonResponse, createErrorResponse } from "../utils/index.js";
 
@@ -259,7 +258,7 @@ If you're looking to perform a direct blockchain action (transfer STX, call a co
 Supported sources:
 - x402.biwas.xyz (default): Use path like "/api/pools/trending"
 - x402.aibtc.com: Use apiUrl="https://x402.aibtc.com" with path like "/inference/openrouter/chat"
-- stx402.com: Use apiUrl="https://stx402.com" with path like "/api/ai/dad-joke"
+- stx402.com: Use apiUrl="https://stx402.com" with path like "/ai/dad-joke"
 - aibtc.com: Use apiUrl="https://aibtc.com" with path like "/api/inbox/{address}"
 - Any x402-compatible URL: Use url parameter with full endpoint URL
 
@@ -273,7 +272,7 @@ Use list_x402_endpoints to discover available endpoints.`,
           .string()
           .url()
           .optional()
-          .describe("Full endpoint URL (e.g., 'https://stx402.com/api/ai/dad-joke'). Takes precedence over path+apiUrl."),
+          .describe("Full endpoint URL (e.g., 'https://stx402.com/ai/dad-joke'). Takes precedence over path+apiUrl."),
         path: z
           .string()
           .optional()
@@ -315,13 +314,46 @@ Use list_x402_endpoints to discover available endpoints.`,
           return formatProbeResponse(probeResult, method, fullUrl, { method, url, path, apiUrl, params, data });
         }
 
-        // autoApprove=true: use payment client only for known paid endpoints
-        const registryEntry = lookupEndpoint(method, requestPath, baseUrl);
-        const isKnownPaid = !!registryEntry && registryEntry.cost !== "FREE";
-        const api = isKnownPaid
-          ? await createApiClient(baseUrl)
-          : createPlainClient(baseUrl);
+        // autoApprove=true: probe first to check if payment is required and validate balance
+        const probeResult = await probeEndpoint({ method, url: fullUrl, params, data });
 
+        if (probeResult.type === 'payment_required') {
+          // Check for duplicate transaction
+          const dedupKey = generateDedupKey(method, fullUrl, params, data);
+          const existingTxid = checkDedupCache(dedupKey);
+          if (existingTxid) {
+            return createJsonResponse({
+              endpoint: `${method} ${fullUrl}`,
+              message: 'Request already processed within the last 60 seconds. This prevents accidental duplicate payments.',
+              txid: existingTxid,
+              note: 'Wait 60s or use different endpoint/params to force a new transaction.',
+            });
+          }
+
+          // Check sufficient balance before creating payment client
+          const account = await getAccount();
+          await checkSufficientBalance(account, probeResult.amount, probeResult.asset);
+
+          // Balance is sufficient - create payment client and execute
+          const api = await createApiClient(baseUrl);
+          const response = await api.request({ method, url: requestPath, params, data });
+
+          // Extract txid from response and record for dedup
+          // x402 payment responses typically include txid in response data or headers
+          const txid = (response.data as { txid?: string })?.txid ||
+                       response.headers?.['x-transaction-id'] ||
+                       'unknown';
+          recordTransaction(dedupKey, txid);
+
+          return createJsonResponse({
+            endpoint: `${method} ${fullUrl}`,
+            response: response.data,
+            ...(txid !== 'unknown' && { txid }),
+          });
+        }
+
+        // Free endpoint - execute directly without payment client
+        const api = createPlainClient(baseUrl);
         const response = await api.request({ method, url: requestPath, params, data });
 
         return createJsonResponse({
@@ -354,7 +386,7 @@ After probing a paid endpoint, use execute_x402_endpoint to actually execute and
 Supported sources:
 - x402.biwas.xyz (default): Use path like "/api/pools/trending"
 - x402.aibtc.com: Use apiUrl="https://x402.aibtc.com" with path like "/inference/openrouter/chat"
-- stx402.com: Use apiUrl="https://stx402.com" with path like "/api/ai/dad-joke"
+- stx402.com: Use apiUrl="https://stx402.com" with path like "/ai/dad-joke"
 - aibtc.com: Use apiUrl="https://aibtc.com" with path like "/api/inbox/{address}"
 - Any x402-compatible URL: Use url parameter with full endpoint URL`,
       inputSchema: {
@@ -366,7 +398,7 @@ Supported sources:
           .string()
           .url()
           .optional()
-          .describe("Full endpoint URL (e.g., 'https://stx402.com/api/ai/dad-joke'). Takes precedence over path+apiUrl."),
+          .describe("Full endpoint URL (e.g., 'https://stx402.com/ai/dad-joke'). Takes precedence over path+apiUrl."),
         path: z
           .string()
           .optional()
