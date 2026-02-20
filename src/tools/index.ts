@@ -33,6 +33,7 @@ import { registerScaffoldTools } from "./scaffold.tools.js";
 import { registerOpenRouterTools } from "./openrouter.tools.js";
 import { registerYieldHunterTools } from "./yield-hunter.tools.js";
 import { registerSettingsTools } from "./settings.tools.js";
+import { registerRelayDiagnosticTools } from "./relay-diagnostic.tools.js";
 
 /**
  * Register all tools with the MCP server.
@@ -93,4 +94,5 @@ export function registerAllTools(server: McpServer): void {
   registerOpenRouterTools(server);
   registerYieldHunterTools(server);
   registerSettingsTools(server);
+  registerRelayDiagnosticTools(server);
 }
