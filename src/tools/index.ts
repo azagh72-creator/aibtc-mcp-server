@@ -21,11 +21,42 @@ import { registerYieldHunterTools } from "./yield-hunter.tools.js";
 import { registerPillarTools } from "./pillar.tools.js";
 import { registerPillarDirectTools } from "./pillar-direct.tools.js";
 import { registerBitcoinTools } from "./bitcoin.tools.js";
+import { registerRelayDiagnosticTools } from "./relay-diagnostic.tools.js";
+import { getSkillForTool } from "./skill-mappings.js";
+
+/**
+ * Wraps server.registerTool to inject _meta.skill from TOOL_SKILL_MAP when a mapping exists.
+ * Returns a cleanup function that restores the original method.
+ */
+function withSkillMeta(server: McpServer): () => void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const original = (server as any).registerTool;
+  const hasOwn = Object.prototype.hasOwnProperty.call(server, "registerTool");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (server as any).registerTool = function (name: string, config: Record<string, unknown>, cb: unknown) {
+    const skill = getSkillForTool(name);
+    const patched = skill
+      ? { ...config, _meta: { ...(config._meta as Record<string, unknown> | undefined ?? {}), skill } }
+      : config;
+    return original.call(server, name, patched, cb);
+  };
+  return () => {
+    if (hasOwn) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (server as any).registerTool = original;
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (server as any).registerTool;
+    }
+  };
+}
 
 /**
  * Register all tools with the MCP server
  */
 export function registerAllTools(server: McpServer): void {
+  const restoreRegisterTool = withSkillMeta(server);
+
   // Wallet & Balance
   registerWalletTools(server);
 
@@ -85,4 +116,9 @@ export function registerAllTools(server: McpServer): void {
 
   // Bitcoin L1 (read-only: balance, fees, UTXOs)
   registerBitcoinTools(server);
+
+  // Relay Diagnostics (sponsor relay health, nonce status, stuck transactions)
+  registerRelayDiagnosticTools(server);
+
+  restoreRegisterTool();
 }
