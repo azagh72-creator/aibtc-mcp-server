@@ -42,12 +42,27 @@ export interface ReputationSummary {
 
 export interface FeedbackEntry {
   client: string;
-  value: number;
+  /**
+   * Raw feedback value as returned by the contract (integer, may be string from JSON parse).
+   * A value of 0 / "0" signals revocation — the contract zeros out a revoked entry rather
+   * than removing it, so callers should treat value === 0 as "revoked".
+   */
+  value: number | string;
   valueDecimals: number;
   wadValue: string;
   tag1: string;
   tag2: string;
   timestamp: number;
+}
+
+export interface FeedbackPage {
+  entries: Array<FeedbackEntry & { index: number; revoked: boolean }>;
+  nextCursor?: number;
+}
+
+export interface ClientPage {
+  clients: string[];
+  nextCursor?: number;
 }
 
 export interface ValidationStatus {
@@ -366,6 +381,250 @@ export class Erc8004Service {
       tag2: fb.tag2.value,
       timestamp: parseInt(fb.timestamp.value, 10),
     };
+  }
+
+  /**
+   * Read all feedback for an agent with optional tag filtering and pagination.
+   *
+   * NOTE: This method issues one RPC call per feedback entry (N+1 pattern).
+   * For agents with large feedback sets this can be slow. Use the cursor/pagination
+   * parameters to limit the number of entries fetched per call.
+   */
+  async readAllFeedback(
+    agentId: number,
+    callerAddress: string,
+    tag1?: string,
+    tag2?: string,
+    includeRevoked = false,
+    cursor = 0
+  ): Promise<FeedbackPage> {
+    const count = await this.getFeedbackCount(agentId, callerAddress);
+    if (count === 0) {
+      return { entries: [] };
+    }
+
+    const PAGE_SIZE = 20;
+    const entries: Array<FeedbackEntry & { index: number; revoked: boolean }> = [];
+
+    let i = cursor;
+    for (; i < count && entries.length < PAGE_SIZE; i++) {
+      const fb = await this.getFeedback(agentId, i, callerAddress);
+      if (!fb) continue;
+
+      // Revocation is signaled by value === 0 (zeroed-out feedback entry).
+      // The contract does not delete revoked entries; it sets their value to zero.
+      const revoked = fb.value === "0" || fb.value === 0 || BigInt(fb.value ?? 0) === 0n;
+      if (!includeRevoked && revoked) continue;
+
+      if (tag1 && fb.tag1 !== tag1) continue;
+      if (tag2 && fb.tag2 !== tag2) continue;
+
+      entries.push({ ...fb, index: i, revoked });
+    }
+
+    return {
+      entries,
+      nextCursor: i < count ? i : undefined,
+    };
+  }
+
+  /**
+   * Get list of clients who gave feedback to an agent (paginated)
+   */
+  async getClients(
+    agentId: number,
+    callerAddress: string,
+    cursor = 0
+  ): Promise<ClientPage> {
+    const result = await this.hiro.callReadOnlyFunction(
+      this.contracts.reputationRegistry,
+      "get-agent-clients",
+      [uintCV(agentId), uintCV(cursor)],
+      callerAddress
+    );
+
+    if (!result.okay || !result.result) {
+      return { clients: [] };
+    }
+
+    const data = cvToJSON(hexToCV(result.result));
+    if (!data.success) {
+      return { clients: [] };
+    }
+
+    const val = data.value.value;
+    const clients: string[] = Array.isArray(val?.clients?.value)
+      ? val.clients.value.map((c: { value: string }) => c.value)
+      : [];
+    const nextCursor =
+      val?.["next-cursor"]?.value !== undefined && val["next-cursor"].value !== null
+        ? parseInt(val["next-cursor"].value, 10)
+        : undefined;
+
+    return { clients, nextCursor };
+  }
+
+  /**
+   * Get the approved feedback limit for a specific client.
+   *
+   * Returns `null` when the client has no approval record (contract returned none/not-okay).
+   * Throws on network/RPC errors so callers can distinguish "not approved" from "call failed".
+   */
+  async getApprovedLimit(
+    agentId: number,
+    client: string,
+    callerAddress: string
+  ): Promise<number | null> {
+    const result = await this.hiro.callReadOnlyFunction(
+      this.contracts.reputationRegistry,
+      "get-approved-limit",
+      [uintCV(agentId), principalCV(client)],
+      callerAddress
+    );
+
+    if (!result.okay) {
+      throw new Error(
+        `Failed to read approved limit for agent ${agentId} / client ${client}: ${(result as any).cause || "read-only call failed"}`
+      );
+    }
+
+    if (!result.result) {
+      return null;
+    }
+
+    const data = cvToJSON(hexToCV(result.result));
+    if (!data.success || data.value.value === null) {
+      return null; // Contract returned (none) — no approval record
+    }
+
+    return parseInt(data.value.value, 10);
+  }
+
+  /**
+   * Get the last feedback index submitted by a specific client for an agent.
+   *
+   * Returns `null` when the client has no feedback record (contract returned none/not-okay).
+   * Throws on network/RPC errors so callers can distinguish "no record" from "call failed".
+   */
+  async getLastIndex(
+    agentId: number,
+    client: string,
+    callerAddress: string
+  ): Promise<number | null> {
+    const result = await this.hiro.callReadOnlyFunction(
+      this.contracts.reputationRegistry,
+      "get-last-index",
+      [uintCV(agentId), principalCV(client)],
+      callerAddress
+    );
+
+    if (!result.okay) {
+      throw new Error(
+        `Failed to read last index for agent ${agentId} / client ${client}: ${(result as any).cause || "read-only call failed"}`
+      );
+    }
+
+    if (!result.result) {
+      return null;
+    }
+
+    const data = cvToJSON(hexToCV(result.result));
+    if (!data.success || data.value.value === null) {
+      return null; // Contract returned (none) — no feedback record
+    }
+
+    return parseInt(data.value.value, 10);
+  }
+
+  /**
+   * Revoke a previously submitted feedback entry
+   */
+  async revokeFeedback(
+    account: Account,
+    agentId: number,
+    index: number,
+    fee?: bigint,
+    sponsored?: boolean
+  ): Promise<TransferResult> {
+    const { address, name } = parseContractId(this.contracts.reputationRegistry);
+
+    const contractCallOptions = {
+      contractAddress: address,
+      contractName: name,
+      functionName: "revoke-feedback",
+      functionArgs: [uintCV(agentId), uintCV(index)],
+      fee,
+    };
+
+    if (sponsored) {
+      return sponsoredContractCall(account, contractCallOptions, this.network);
+    }
+
+    return callContract(account, contractCallOptions);
+  }
+
+  /**
+   * Append a response to received feedback
+   */
+  async appendResponse(
+    account: Account,
+    agentId: number,
+    client: string,
+    index: number,
+    responseUri: string,
+    responseHash: Buffer,
+    fee?: bigint,
+    sponsored?: boolean
+  ): Promise<TransferResult> {
+    const { address, name } = parseContractId(this.contracts.reputationRegistry);
+
+    const contractCallOptions = {
+      contractAddress: address,
+      contractName: name,
+      functionName: "append-response",
+      functionArgs: [
+        uintCV(agentId),
+        principalCV(client),
+        uintCV(index),
+        stringUtf8CV(responseUri),
+        bufferCV(responseHash),
+      ],
+      fee,
+    };
+
+    if (sponsored) {
+      return sponsoredContractCall(account, contractCallOptions, this.network);
+    }
+
+    return callContract(account, contractCallOptions);
+  }
+
+  /**
+   * Approve a client with an index limit
+   */
+  async approveClient(
+    account: Account,
+    agentId: number,
+    client: string,
+    indexLimit: number,
+    fee?: bigint,
+    sponsored?: boolean
+  ): Promise<TransferResult> {
+    const { address, name } = parseContractId(this.contracts.reputationRegistry);
+
+    const contractCallOptions = {
+      contractAddress: address,
+      contractName: name,
+      functionName: "approve-client",
+      functionArgs: [uintCV(agentId), principalCV(client), uintCV(indexLimit)],
+      fee,
+    };
+
+    if (sponsored) {
+      return sponsoredContractCall(account, contractCallOptions, this.network);
+    }
+
+    return callContract(account, contractCallOptions);
   }
 
   // ==========================================================================

@@ -13,6 +13,7 @@ import { registerStackingLotteryTools } from "./stacking-lottery.tools.js";
 import { registerBnsTools } from "./bns.tools.js";
 import { registerStyxTools } from "./styx.tools.js";
 import { registerQueryTools } from "./query.tools.js";
+import { registerReputationTools } from "./reputation.tools.js";
 import { registerEndpointTools } from "./endpoint.tools.js";
 import { registerDefiTools } from "./defi.tools.js";
 // TODO: Re-enable when Bitflow API key integration is complete
@@ -102,6 +103,9 @@ export function registerAllTools(server: McpServer): void {
 
   // Blockchain Queries
   registerQueryTools(server);
+
+  // Reputation (ERC-8004 feedback lifecycle)
+  registerReputationTools(server);
 
   // x402 Endpoints
   registerEndpointTools(server);
