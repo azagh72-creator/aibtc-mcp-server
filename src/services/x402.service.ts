@@ -29,6 +29,19 @@ import { getContracts, parseContractId } from "../config/contracts.js";
 // Track payment attempts per client instance (auto-cleanup via WeakMap)
 const paymentAttempts: WeakMap<AxiosInstance, number> = new WeakMap();
 
+// Track 429 retry counts per client instance
+const rateLimitRetries: WeakMap<AxiosInstance, number> = new WeakMap();
+
+/**
+ * Error thrown when an x402 endpoint returns 429 Too Many Requests and all retries are exhausted.
+ */
+export class X402RateLimitError extends Error {
+  constructor(message: string, public readonly retryAfterSeconds: number) {
+    super(message);
+    this.name = "X402RateLimitError";
+  }
+}
+
 // Transaction deduplication cache: {dedupKey -> {txid, timestamp}}
 const dedupCache: Map<string, { txid: string; timestamp: number }> = new Map();
 
@@ -83,6 +96,61 @@ function createBaseAxiosInstance(baseURL?: string): AxiosInstance {
     }
   );
 
+  // Handle 429 Too Many Requests with Retry-After header parsing and exponential backoff.
+  // Max 2 retries with minimum delays [2s, 5s]. If Retry-After exceeds the cap (30s),
+  // skip retries and immediately surface the error so interactive calls aren't blocked.
+  // Runs before payment interceptors (response interceptors are FIFO) so payment flows
+  // benefit automatically.
+  const MAX_RETRY_DELAYS_MS = [2000, 5000];
+  const MAX_RETRY_AFTER_CAP_S = 30;
+  instance.interceptors.response.use(
+    (response) => {
+      // Reset retry counter on success so later 429s get the full retry budget
+      rateLimitRetries.delete(instance);
+      return response;
+    },
+    async (error) => {
+      if (error?.response?.status !== 429) {
+        return Promise.reject(error);
+      }
+
+      const retries = rateLimitRetries.get(instance) ?? 0;
+
+      // Parse Retry-After header; default to 0 when absent so the backoff delay governs
+      const parsed = parseInt(error.response.headers?.["retry-after"] ?? "", 10);
+      const retryAfterSeconds = isNaN(parsed) ? 0 : parsed;
+
+      // If the server says to wait longer than our cap, don't block — fail immediately
+      if (retryAfterSeconds > MAX_RETRY_AFTER_CAP_S) {
+        return Promise.reject(
+          new X402RateLimitError(
+            `x402 endpoint rate limit exceeded. Server requested ${retryAfterSeconds}s wait (exceeds ${MAX_RETRY_AFTER_CAP_S}s cap). ` +
+              `Retry after ${retryAfterSeconds}s.`,
+            retryAfterSeconds
+          )
+        );
+      }
+
+      if (retries >= MAX_RETRY_DELAYS_MS.length) {
+        const reportSeconds = retryAfterSeconds > 0 ? retryAfterSeconds : 10;
+        return Promise.reject(
+          new X402RateLimitError(
+            `x402 endpoint rate limit exceeded. All retries exhausted. ` +
+              `Retry after ${reportSeconds}s.`,
+            reportSeconds
+          )
+        );
+      }
+
+      rateLimitRetries.set(instance, retries + 1);
+
+      const delay = Math.max(retryAfterSeconds * 1000, MAX_RETRY_DELAYS_MS[retries]);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      return instance.request(error.config);
+    }
+  );
+
   return instance;
 }
 
@@ -109,14 +177,45 @@ export async function mnemonicToAccount(
 }
 
 /**
+ * Payment requirements passed to the onBeforePayment callback.
+ * Includes the account so callers can validate balance without a redundant getAccount() call.
+ */
+export interface PaymentRequirements {
+  amount: string;
+  asset: string;
+  recipient: string;
+  network: string;
+  account: Account;
+}
+
+/**
+ * Options for createApiClient
+ */
+export interface CreateApiClientOptions {
+  /**
+   * Optional callback invoked after a 402 is received and payment requirements are
+   * parsed, but BEFORE the transaction is signed/broadcast. Throwing from this
+   * callback aborts the payment (e.g. insufficient balance check).
+   */
+  onBeforePayment?: (requirements: PaymentRequirements) => Promise<void>;
+}
+
+/**
  * Create an API client with x402 payment interceptor.
  * Creates a fresh client instance per call with max-1-payment-attempt guard.
  */
-export async function createApiClient(baseUrl?: string): Promise<AxiosInstance> {
+export async function createApiClient(baseUrl?: string, options?: CreateApiClientOptions): Promise<AxiosInstance> {
   const url = baseUrl || API_URL;
 
-  // Get account (from managed wallet or env mnemonic)
-  const account = await getAccount();
+  // Account is lazy-loaded on first 402 so free endpoints work without a wallet.
+  let account: Account | null = null;
+  const ensureAccount = async (): Promise<Account> => {
+    if (!account) {
+      account = await getAccount();
+    }
+    return account;
+  };
+
   const axiosInstance = createBaseAxiosInstance(url);
 
   // Interceptor 1 (FIFO): max-1-payment-attempt guard.
@@ -181,25 +280,40 @@ export async function createApiClient(baseUrl?: string): Promise<AxiosInstance> 
           );
         }
 
+        // Lazy-load account on first 402 — free endpoints never reach here
+        const acct = await ensureAccount();
+
         // Verify the payment network matches our configured network
         const paymentNetwork = getNetworkFromStacksChainId(selectedOption.network);
-        if (paymentNetwork && paymentNetwork !== account.network) {
+        if (paymentNetwork && paymentNetwork !== acct.network) {
           return Promise.reject(
             new Error(
-              `Network mismatch: endpoint requires ${paymentNetwork} but wallet is configured for ${account.network}. ` +
-              `Switch to a ${paymentNetwork} wallet or use a ${account.network} endpoint.`
+              `Network mismatch: endpoint requires ${paymentNetwork} but wallet is configured for ${acct.network}. ` +
+              `Switch to a ${paymentNetwork} wallet or use a ${acct.network} endpoint.`
             )
           );
+        }
+
+        // Invoke pre-payment callback (e.g. balance check) before signing/broadcasting.
+        // If the callback throws, the payment is aborted and the error propagates to the caller.
+        if (options?.onBeforePayment) {
+          await options.onBeforePayment({
+            amount: selectedOption.amount,
+            asset: selectedOption.asset,
+            recipient: selectedOption.payTo,
+            network: paymentNetwork ?? acct.network,
+            account: acct,
+          });
         }
 
         // Build a sponsored signed transaction (relay pays gas; fee: 0n)
         const tokenType = detectTokenType(selectedOption.asset);
         const amount = BigInt(selectedOption.amount);
-        const networkName = getStacksNetwork(account.network);
+        const networkName = getStacksNetwork(acct.network);
 
         let transaction;
         if (tokenType === "sBTC") {
-          const contracts = getContracts(account.network);
+          const contracts = getContracts(acct.network);
           const { address: contractAddress, name: contractName } = parseContractId(
             contracts.SBTC_TOKEN
           );
@@ -210,11 +324,11 @@ export async function createApiClient(baseUrl?: string): Promise<AxiosInstance> 
             functionName: "transfer",
             functionArgs: [
               uintCV(amount),
-              principalCV(account.address),
+              principalCV(acct.address),
               principalCV(selectedOption.payTo),
               noneCV(),
             ],
-            senderKey: account.privateKey,
+            senderKey: acct.privateKey,
             network: networkName,
             postConditionMode: PostConditionMode.Allow,
             sponsored: true,
@@ -224,7 +338,7 @@ export async function createApiClient(baseUrl?: string): Promise<AxiosInstance> 
           transaction = await makeSTXTokenTransfer({
             recipient: selectedOption.payTo,
             amount,
-            senderKey: account.privateKey,
+            senderKey: acct.privateKey,
             network: networkName,
             memo: "",
             sponsored: true,
