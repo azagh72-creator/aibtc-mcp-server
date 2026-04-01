@@ -417,6 +417,16 @@ export const TOOL_SKILL_MAP: Record<string, string> = {
   arxiv_search: "arxiv-research",
   arxiv_compile_digest: "arxiv-research",
   arxiv_list_digests: "arxiv-research",
+
+  // flying-whale-marketplace skill — skill discovery, bounties, order book, intelligence
+  flying_whale_list_skills: "flying-whale-marketplace",
+  flying_whale_get_skill: "flying-whale-marketplace",
+  flying_whale_list_categories: "flying-whale-marketplace",
+  flying_whale_get_stats: "flying-whale-marketplace",
+  flying_whale_list_bounties: "flying-whale-marketplace",
+  flying_whale_get_bounty: "flying-whale-marketplace",
+  flying_whale_list_orders: "flying-whale-marketplace",
+  flying_whale_get_intelligence: "flying-whale-marketplace",
 };
 
 /**

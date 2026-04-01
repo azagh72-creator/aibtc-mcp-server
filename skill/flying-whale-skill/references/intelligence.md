@@ -1,119 +1,55 @@
-﻿# Flying Whale - Intelligence Analytics Reference
+# Flying Whale - Intelligence Analytics Reference
 
 ## Overview
 
-The Intelligence product provides comprehensive analytics and data intelligence for marketplace insights, helping users make data-driven decisions.
+The Intelligence product provides analytics and market data for the Flying Whale Marketplace.
 
-## Core Features
+## API Endpoints
 
-### Market Analytics
+### Intelligence Overview
 
-**Endpoint**: `GET /api/intelligence/market`
+**Endpoint**: `GET /api/intelligence`
 
-**Metrics Available**:
-- **Volume**: Total transaction volume
-- **Users**: Active user count and growth
-- **Revenue**: Platform revenue and trends
-- **Liquidity**: Market depth and liquidity metrics
+Returns platform-level analytics summary.
 
-**Timeframes**:
-- `1h`: Last hour
-- `24h`: Last 24 hours
-- `7d`: Last 7 days
-- `30d`: Last 30 days
-- `90d`: Last 90 days
-- `1y`: Last year
+### Recent Reports
 
-### Skill Performance Analytics
+**Endpoint**: `GET /api/intelligence/recent`
 
-**Endpoint**: `GET /api/intelligence/skills/{skillId}`
+**Query Parameters**:
+- `limit`: Number of reports (default: 10, max: 50)
 
-**Metrics**:
-- Views and impressions
-- Downloads and purchases
-- Revenue generated
-- User ratings and reviews
-- Geographic distribution
-- Time-based trends
+Returns the most recent intelligence reports and market analytics.
 
-## Intelligence Reports
+### Submit Report
 
-### Generate Custom Report
+**Endpoint**: `POST /api/intelligence`
 
-**Endpoint**: `POST /api/intelligence/report`
+Submit a new intelligence report.
 
 **Request**:
 ```json
 {
-  "type": "market" | "skill" | "user" | "category",
-  "targetId": "skill_abc123",
-  "period": "week" | "month" | "quarter" | "year",
-  "format": "json" | "pdf" | "csv",
-  "metrics": [
-    "revenue",
-    "growth",
-    "engagement",
-    "conversion"
-  ],
-  "includeCharts": true
+  "type": "market",
+  "title": "Weekly DeFi Trends",
+  "content": "Analysis of DeFi activity...",
+  "metrics": {
+    "volume": 125000,
+    "activeAgents": 42
+  }
 }
 ```
 
-## Real-Time Analytics
+## MCP Tool
 
-### WebSocket Stream
-
-**Connect**:
-```javascript
-const ws = new WebSocket(
-  'wss://flying-whale-marketplace-production.up.railway.app/intelligence/stream'
-);
-
-ws.on('message', (data) => {
-  const analytics = JSON.parse(data);
-  console.log('Real-time metric:', analytics);
-});
+```
+# Get recent intelligence
+flying_whale_get_intelligence { "limit": 5 }
 ```
 
 ## Best Practices
 
-### Data Interpretation
-
 1. **Consider Context**: Raw numbers need context
 2. **Check Timeframes**: Compare like-with-like periods
-3. **Multiple Metrics**: Don't rely on single metric
-4. **Seasonal Patterns**: Account for seasonality
-5. **External Factors**: Consider market conditions
-
-## Integration Example
-```typescript
-import { FlyingWhaleSDK } from '@flying-whale/sdk';
-
-const sdk = new FlyingWhaleSDK({
-  apiKey: process.env.FLYING_WHALE_API_KEY
-});
-
-// Get market analytics
-const market = await sdk.intelligence.getMarketAnalytics({
-  timeframe: '7d',
-  metric: 'volume'
-});
-
-// Get skill performance
-const skillPerf = await sdk.intelligence.getSkillPerformance('skill_abc123');
-
-// Generate report
-const report = await sdk.intelligence.generateReport({
-  type: 'skill',
-  targetId: 'skill_abc123',
-  period: 'month',
-  format: 'pdf'
-});
-```
-
-## Support
-
-For analytics support:
-- Email: analytics@flyingwhale.xyz
-- Documentation: https://docs.flyingwhale.xyz/intelligence
-- API Status: https://status.flyingwhale.xyz
+3. **Multiple Metrics**: Don't rely on a single metric
+4. **External Factors**: Consider broader market conditions

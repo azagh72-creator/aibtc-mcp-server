@@ -1,4 +1,4 @@
-﻿# Flying Whale - Bounties & Signals Reference
+# Flying Whale - Bounties & Signals Reference
 
 ## Part 1: Bounties System
 
@@ -66,17 +66,21 @@ The Bounties system enables users to create task-based rewards, incentivizing th
 }
 ```
 
-#### Award Bounty
+#### Claim Bounty
 
-**Endpoint**: `POST /api/bounties/{bountyId}/award`
+**Endpoint**: `POST /api/bounties/{bountyId}/claim`
+
+Marks the bounty as claimed by the calling agent.
+
+#### Approve Bounty
+
+**Endpoint**: `POST /api/bounties/{bountyId}/approve`
 
 **Request**:
 ```json
 {
   "winnerId": "user_123",
-  "submissionId": "sub_xyz",
-  "feedback": "Excellent work!",
-  "tip": 500
+  "feedback": "Excellent work!"
 }
 ```
 
@@ -90,141 +94,21 @@ The Bounties system enables users to create task-based rewards, incentivizing th
 - **Community**: Marketing, social media
 - **Other**: Miscellaneous tasks
 
-## Part 2: Signal System
+## Integration Example
 
-### Overview
-
-The Signal system provides real-time notifications, alerts, and broadcasts for important marketplace events.
-
-### Signal Types
-
-1. **Alert**: Time-sensitive notifications
-2. **Notification**: General updates
-3. **Broadcast**: Platform-wide announcements
-4. **Personal**: Direct user messages
-
-### Priority Levels
-
-- **Urgent**: Critical actions required
-- **High**: Important but not critical
-- **Medium**: Standard notifications
-- **Low**: Informational only
-
-### API Endpoints
-
-#### Create Signal
-
-**Endpoint**: `POST /api/signals`
-
-**Request (Alert)**:
-```json
-{
-  "type": "alert",
-  "title": "Price Alert: SKILL/STX",
-  "message": "SKILL/STX reached your target price of 100",
-  "priority": "urgent",
-  "targets": ["user_abc123"],
-  "data": {
-    "market": "SKILL/STX",
-    "price": 100,
-    "change": "+5.2%"
-  }
-}
 ```
+# Using MCP tools directly:
 
-#### Get Signals
+# List open bounties
+flying_whale_list_bounties { "status": "open" }
 
-**Endpoint**: `GET /api/signals`
-
-**Query Parameters**:
-- `status`: "unread", "read", "all"
-- `type`: Signal type filter
-- `priority`: Priority filter
-- `limit`: Results per page
-
-#### Mark as Read
-
-**Endpoint**: `PUT /api/signals/{signalId}/read`
-
-### WebSocket Streaming
-
-**Connect**:
-```javascript
-const ws = new WebSocket(
-  'wss://flying-whale-marketplace-production.up.railway.app/signals'
-);
-
-ws.on('message', (data) => {
-  const signal = JSON.parse(data);
-  handleSignal(signal);
-});
-```
-
-## Integration Examples
-
-### Bounty Workflow
-```typescript
-import { FlyingWhaleSDK } from '@flying-whale/sdk';
-
-const sdk = new FlyingWhaleSDK({
-  apiKey: process.env.FLYING_WHALE_API_KEY
-});
-
-// Create bounty
-const bounty = await sdk.bounties.create({
-  title: "Build Payment Gateway",
-  description: "...",
-  reward: 5000,
-  currency: "STX",
-  deadline: "2026-05-31T23:59:59Z",
-  escrow: true
-});
-
-// Submit solution
-const submission = await sdk.bounties.submit(bounty.bountyId, {
-  solutionUrl: "https://github.com/...",
-  description: "Completed all requirements"
-});
-```
-
-### Signal Workflow
-```typescript
-// Send signal
-await sdk.signals.send({
-  type: 'notification',
-  title: 'Welcome to Flying Whale',
-  message: 'Thanks for joining!',
-  targets: ['user_new123']
-});
-
-// Subscribe to real-time signals
-sdk.signals.subscribe((signal) => {
-  if (signal.priority === 'urgent') {
-    showNotification(signal);
-  }
-});
+# Get bounty details
+flying_whale_get_bounty { "bountyId": "bounty_123" }
 ```
 
 ## Best Practices
 
-### Bounties
-
 1. **Clear Requirements**: Be specific about deliverables
 2. **Reasonable Deadlines**: Allow adequate time
 3. **Fair Rewards**: Price based on complexity
-4. **Use Escrow**: Build trust with participants
-5. **Communicate**: Respond to questions promptly
-
-### Signals
-
-1. **Relevant Content**: Don't spam users
-2. **Appropriate Priority**: Reserve urgent for critical
-3. **Actionable**: Include clear next steps
-4. **Respect Preferences**: Honor quiet hours
-5. **Batch Updates**: Use digest mode when possible
-
-## Support
-
-- Bounties: bounties@flyingwhale.xyz
-- Signals: signals@flyingwhale.xyz
-- Documentation: https://docs.flyingwhale.xyz
+4. **Communicate**: Respond to questions promptly

@@ -44,6 +44,7 @@ import { registerBountyScannerTools } from "./bounty-scanner.tools.js";
 import { registerRunesTools } from "./runes.tools.js";
 import { registerInboxTools } from "./inbox.tools.js";
 import { registerArxivResearchTools } from "./arxiv-research.tools.js";
+import { registerFlyingWhaleTools } from "./flying-whale.tools.js";
 import { getSkillForTool } from "./skill-mappings.js";
 
 /**
@@ -207,6 +208,9 @@ export function registerAllTools(server: McpServer): void {
 
   // arXiv Research (public arXiv Atom API — paper search and digest compilation)
   registerArxivResearchTools(server);
+
+  // Flying Whale Marketplace (skill discovery, bounties, order book, intelligence)
+  registerFlyingWhaleTools(server);
 
   restoreRegisterTool();
 }
