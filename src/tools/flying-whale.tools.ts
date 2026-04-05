@@ -248,13 +248,20 @@ export function registerFlyingWhaleTools(server: McpServer): void {
           .enum(["buy", "sell"])
           .optional()
           .describe("Filter by order side (default: both)"),
+        limit: z
+          .number()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Max orders to return (default: 20)"),
       },
     },
-    async ({ market, side }) => {
+    async ({ market, side, limit }) => {
       try {
         const data = await marketplaceFetch("/api/orderbook", {
           market,
           side,
+          limit,
         });
         return createJsonResponse(data);
       } catch (error) {
