@@ -34,7 +34,7 @@ import {
 } from "@scure/btc-signer";
 import { NETWORK } from "../config/networks.js";
 import { getAccount } from "../services/x402.service.js";
-import { createJsonResponse, createErrorResponse } from "../utils/index.js";
+import { createJsonResponse } from "../utils/index.js";
 import { bip322Sign } from "../utils/bip322.js";
 
 const BOUNTY_BASE = "https://bounty.drx4.xyz/api";
@@ -147,30 +147,26 @@ No authentication required.`,
       },
     },
     async ({ status, tags, creator, min_amount, max_amount, limit, offset }) => {
-      try {
-        const params = new URLSearchParams();
-        if (status) params.set("status", status);
-        if (tags) params.set("tags", tags);
-        if (creator) params.set("creator", creator);
-        if (min_amount !== undefined) params.set("min_amount", String(min_amount));
-        if (max_amount !== undefined) params.set("max_amount", String(max_amount));
-        if (limit !== undefined) params.set("limit", String(limit));
-        if (offset !== undefined) params.set("offset", String(offset));
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      if (tags) params.set("tags", tags);
+      if (creator) params.set("creator", creator);
+      if (min_amount !== undefined) params.set("min_amount", String(min_amount));
+      if (max_amount !== undefined) params.set("max_amount", String(max_amount));
+      if (limit !== undefined) params.set("limit", String(limit));
+      if (offset !== undefined) params.set("offset", String(offset));
 
-        const query = params.toString();
-        const url = `${BOUNTY_BASE}/bounties${query ? `?${query}` : ""}`;
+      const query = params.toString();
+      const url = `${BOUNTY_BASE}/bounties${query ? `?${query}` : ""}`;
 
-        const res = await fetch(url);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to list bounties (${res.status}): ${text}`);
-        }
-
-        const data = await res.json();
-        return createJsonResponse(data);
-      } catch (error) {
-        return createErrorResponse(error);
+      const res = await fetch(url);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to list bounties (${res.status}): ${text}`);
       }
+
+      const data = await res.json();
+      return createJsonResponse(data);
     }
   );
 
@@ -193,18 +189,14 @@ No authentication required.`,
       },
     },
     async ({ id }) => {
-      try {
-        const res = await fetch(`${BOUNTY_BASE}/bounties/${encodeURIComponent(id)}`);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch bounty ${id} (${res.status}): ${text}`);
-        }
-
-        const data = await res.json();
-        return createJsonResponse(data);
-      } catch (error) {
-        return createErrorResponse(error);
+      const res = await fetch(`${BOUNTY_BASE}/bounties/${encodeURIComponent(id)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to fetch bounty ${id} (${res.status}): ${text}`);
       }
+
+      const data = await res.json();
+      return createJsonResponse(data);
     }
   );
 
@@ -238,37 +230,33 @@ No authentication required.`,
       },
     },
     async ({ capability_tags, limit }) => {
-      try {
-        const res = await fetch(`${BOUNTY_BASE}/bounties?status=open&limit=100`);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch open bounties (${res.status}): ${text}`);
-        }
-
-        const data = await res.json() as { bounties?: Array<Record<string, unknown>> };
-        const bounties = data.bounties ?? [];
-
-        const capabilitySet = new Set(capability_tags.map((t: string) => t.toLowerCase()));
-
-        const scored = bounties.map((bounty) => {
-          const bountyTags: string[] = Array.isArray(bounty.tags)
-            ? (bounty.tags as string[]).map((t: string) => t.toLowerCase())
-            : [];
-          const matchScore = bountyTags.filter((tag: string) => capabilitySet.has(tag)).length;
-          return { ...bounty, match_score: matchScore };
-        });
-
-        scored.sort((a, b) => b.match_score - a.match_score);
-
-        const maxResults = limit ?? 10;
-        return createJsonResponse({
-          matches: scored.slice(0, maxResults),
-          total_open: bounties.length,
-          capability_tags,
-        });
-      } catch (error) {
-        return createErrorResponse(error);
+      const res = await fetch(`${BOUNTY_BASE}/bounties?status=open&limit=100`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to fetch open bounties (${res.status}): ${text}`);
       }
+
+      const data = await res.json() as { bounties?: Array<Record<string, unknown>> };
+      const bounties = data.bounties ?? [];
+
+      const capabilitySet = new Set(capability_tags.map((t: string) => t.toLowerCase()));
+
+      const scored = bounties.map((bounty) => {
+        const bountyTags: string[] = Array.isArray(bounty.tags)
+          ? (bounty.tags as string[]).map((t: string) => t.toLowerCase())
+          : [];
+        const matchScore = bountyTags.filter((tag: string) => capabilitySet.has(tag)).length;
+        return { ...bounty, match_score: matchScore };
+      });
+
+      scored.sort((a, b) => b.match_score - a.match_score);
+
+      const maxResults = limit ?? 10;
+      return createJsonResponse({
+        matches: scored.slice(0, maxResults),
+        total_open: bounties.length,
+        capability_tags,
+      });
     }
   );
 
@@ -399,56 +387,52 @@ Fields:
       },
     },
     async ({ id, notes }) => {
-      try {
-        const account = await getAccount();
+      const account = await getAccount();
 
-        if (!account.btcAddress || !account.btcPrivateKey || !account.btcPublicKey) {
-          throw new Error(
-            "Bitcoin keys not available. Unlock a wallet with BTC key derivation to claim bounties."
-          );
-        }
-
-        const resource = `bounties/${id}`;
-        const authHeaders = buildBountyAuthHeaders("claim-bounty", resource, account as AccountForAuth);
-
-        const payload: Record<string, unknown> = {
-          btc_address: account.btcAddress,
-        };
-        if (account.address) {
-          payload.stx_address = account.address;
-        }
-        if (notes) {
-          payload.notes = notes;
-        }
-
-        const res = await fetch(`${BOUNTY_BASE}/bounties/${encodeURIComponent(id)}/claim`, {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify(payload),
-        });
-
-        const responseText = await res.text();
-        let responseData: unknown;
-        try {
-          responseData = JSON.parse(responseText);
-        } catch {
-          responseData = { raw: responseText };
-        }
-
-        if (!res.ok) {
-          throw new Error(`Failed to claim bounty ${id} (${res.status}): ${responseText}`);
-        }
-
-        return createJsonResponse({
-          success: true,
-          message: "Bounty claimed successfully",
-          claim: responseData,
-          claimed_by: account.btcAddress,
-          bounty_id: id,
-        });
-      } catch (error) {
-        return createErrorResponse(error);
+      if (!account.btcAddress || !account.btcPrivateKey || !account.btcPublicKey) {
+        throw new Error(
+          "Bitcoin keys not available. Unlock a wallet with BTC key derivation to claim bounties."
+        );
       }
+
+      const resource = `bounties/${id}`;
+      const authHeaders = buildBountyAuthHeaders("claim-bounty", resource, account as AccountForAuth);
+
+      const payload: Record<string, unknown> = {
+        btc_address: account.btcAddress,
+      };
+      if (account.address) {
+        payload.stx_address = account.address;
+      }
+      if (notes) {
+        payload.notes = notes;
+      }
+
+      const res = await fetch(`${BOUNTY_BASE}/bounties/${encodeURIComponent(id)}/claim`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify(payload),
+      });
+
+      const responseText = await res.text();
+      let responseData: unknown;
+      try {
+        responseData = JSON.parse(responseText);
+      } catch {
+        responseData = { raw: responseText };
+      }
+
+      if (!res.ok) {
+        throw new Error(`Failed to claim bounty ${id} (${res.status}): ${responseText}`);
+      }
+
+      return createJsonResponse({
+        success: true,
+        message: "Bounty claimed successfully",
+        claim: responseData,
+        claimed_by: account.btcAddress,
+        bounty_id: id,
+      });
     }
   );
 
@@ -472,33 +456,29 @@ No authentication required.`,
       },
     },
     async ({ id }) => {
-      try {
-        const res = await fetch(`${BOUNTY_BASE}/bounties/${encodeURIComponent(id)}`);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch bounty status for ${id} (${res.status}): ${text}`);
-        }
-
-        const data = await res.json() as Record<string, unknown>;
-
-        // Extract and surface the most relevant status fields
-        return createJsonResponse({
-          id: data.id,
-          status: data.status,
-          title: data.title,
-          reward_sats: data.reward_sats,
-          creator: data.creator,
-          tags: data.tags,
-          claims: data.claims,
-          submissions: data.submissions,
-          payments: data.payments,
-          created_at: data.created_at,
-          updated_at: data.updated_at,
-          status_flow: "open → claimed → submitted → approved → paid (or cancelled)",
-        });
-      } catch (error) {
-        return createErrorResponse(error);
+      const res = await fetch(`${BOUNTY_BASE}/bounties/${encodeURIComponent(id)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to fetch bounty status for ${id} (${res.status}): ${text}`);
       }
+
+      const data = await res.json() as Record<string, unknown>;
+
+      // Extract and surface the most relevant status fields
+      return createJsonResponse({
+        id: data.id,
+        status: data.status,
+        title: data.title,
+        reward_sats: data.reward_sats,
+        creator: data.creator,
+        tags: data.tags,
+        claims: data.claims,
+        submissions: data.submissions,
+        payments: data.payments,
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        status_flow: "open → claimed → submitted → approved → paid (or cancelled)",
+      });
     }
   );
 
@@ -522,30 +502,26 @@ No authentication required.`,
       },
     },
     async ({ btc_address }) => {
-      try {
-        let address = btc_address;
+      let address = btc_address;
 
-        if (!address) {
-          const account = await getAccount();
-          if (!account.btcAddress) {
-            throw new Error(
-              "No BTC address found. Provide a btc_address or unlock a wallet with BTC key derivation."
-            );
-          }
-          address = account.btcAddress;
+      if (!address) {
+        const account = await getAccount();
+        if (!account.btcAddress) {
+          throw new Error(
+            "No BTC address found. Provide a btc_address or unlock a wallet with BTC key derivation."
+          );
         }
-
-        const res = await fetch(`${BOUNTY_BASE}/agents/${encodeURIComponent(address)}`);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch agent profile for ${address} (${res.status}): ${text}`);
-        }
-
-        const data = await res.json();
-        return createJsonResponse(data);
-      } catch (error) {
-        return createErrorResponse(error);
+        address = account.btcAddress;
       }
+
+      const res = await fetch(`${BOUNTY_BASE}/agents/${encodeURIComponent(address)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to fetch agent profile for ${address} (${res.status}): ${text}`);
+      }
+
+      const data = await res.json();
+      return createJsonResponse(data);
     }
   );
 
@@ -563,18 +539,14 @@ No authentication required.`,
       inputSchema: {},
     },
     async () => {
-      try {
-        const res = await fetch(`${BOUNTY_BASE}/stats`);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch bounty stats (${res.status}): ${text}`);
-        }
-
-        const data = await res.json();
-        return createJsonResponse(data);
-      } catch (error) {
-        return createErrorResponse(error);
+      const res = await fetch(`${BOUNTY_BASE}/stats`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to fetch bounty stats (${res.status}): ${text}`);
       }
+
+      const data = await res.json();
+      return createJsonResponse(data);
     }
   );
 }

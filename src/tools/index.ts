@@ -45,6 +45,11 @@ import { registerRunesTools } from "./runes.tools.js";
 import { registerInboxTools } from "./inbox.tools.js";
 import { registerArxivResearchTools } from "./arxiv-research.tools.js";
 import { registerFlyingWhaleTools } from "./flying-whale.tools.js";
+import { registerChildInscriptionTools } from "./child-inscription.tools.js";
+import { registerErc8004Tools } from "./erc8004.tools.js";
+import { registerOrdinalsTools } from "./ordinals.tools.js";
+import { registerPsbtTools } from "./psbt.tools.js";
+import { registerSettingsTools } from "./settings.tools.js";
 import { getSkillForTool } from "./skill-mappings.js";
 
 /**
@@ -211,6 +216,21 @@ export function registerAllTools(server: McpServer): void {
 
   // Flying Whale Marketplace (skill discovery, bounties, order book, intelligence)
   registerFlyingWhaleTools(server);
+
+  // Child Inscriptions (parent-child provenance via OP_RETURN)
+  registerChildInscriptionTools(server);
+
+  // ERC-8004 (on-chain agent identity, reputation, validation)
+  registerErc8004Tools(server);
+
+  // Ordinals (inscribe, reveal, estimate fee, get inscription, taproot address)
+  registerOrdinalsTools(server);
+
+  // PSBTs (decode, sign, finalize, broadcast)
+  registerPsbtTools(server);
+
+  // Settings (Hiro API key, Stacks API URL, server version)
+  registerSettingsTools(server);
 
   restoreRegisterTool();
 }

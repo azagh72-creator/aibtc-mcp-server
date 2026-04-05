@@ -66,7 +66,7 @@ import {
   TEST_NETWORK as BTC_TESTNET,
 } from "@scure/btc-signer";
 import { NETWORK } from "../config/networks.js";
-import { createJsonResponse, createErrorResponse } from "../utils/index.js";
+import { createJsonResponse } from "../utils/index.js";
 import { getWalletManager } from "../services/wallet-manager.js";
 import {
   bip322BuildToSpendTxId,
@@ -687,61 +687,57 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ message, domain }) => {
-      try {
-        const account = requireUnlockedWallet();
+      const account = requireUnlockedWallet();
 
-        // Build domain CV with chain-id
-        const chainId = CHAIN_IDS[NETWORK];
-        const domainCV = buildDomainCV(domain.name, domain.version, chainId);
+      // Build domain CV with chain-id
+      const chainId = CHAIN_IDS[NETWORK];
+      const domainCV = buildDomainCV(domain.name, domain.version, chainId);
 
-        // Convert message to ClarityValue
-        const messageCV = jsonToClarityValue(message);
+      // Convert message to ClarityValue
+      const messageCV = jsonToClarityValue(message);
 
-        // Sign the structured data
-        const signature = signStructuredData({
-          message: messageCV,
-          domain: domainCV,
-          privateKey: account.privateKey,
-        });
+      // Sign the structured data
+      const signature = signStructuredData({
+        message: messageCV,
+        domain: domainCV,
+        privateKey: account.privateKey,
+      });
 
-        // Compute hashes for reference and verification
-        const messageHash = hashStructuredData(messageCV);
-        const domainHash = hashStructuredData(domainCV);
+      // Compute hashes for reference and verification
+      const messageHash = hashStructuredData(messageCV);
+      const domainHash = hashStructuredData(domainCV);
 
-        // Compute the full encoded bytes and its sha256 hash (used for signing/verification)
-        const encodedBytes = encodeStructuredDataBytes({
-          message: messageCV,
-          domain: domainCV,
-        });
-        const encodedHex = bytesToHex(encodedBytes);
-        const verificationHash = bytesToHex(hashSha256Sync(encodedBytes));
+      // Compute the full encoded bytes and its sha256 hash (used for signing/verification)
+      const encodedBytes = encodeStructuredDataBytes({
+        message: messageCV,
+        domain: domainCV,
+      });
+      const encodedHex = bytesToHex(encodedBytes);
+      const verificationHash = bytesToHex(hashSha256Sync(encodedBytes));
 
-        return createJsonResponse({
-          success: true,
-          signature,
-          signatureFormat: "RSV (65 bytes hex)",
-          signer: account.address,
-          network: NETWORK,
+      return createJsonResponse({
+        success: true,
+        signature,
+        signatureFormat: "RSV (65 bytes hex)",
+        signer: account.address,
+        network: NETWORK,
+        chainId,
+        hashes: {
+          message: messageHash,
+          domain: domainHash,
+          encoded: encodedHex,
+          verification: verificationHash,
+          prefix: SIP018_MSG_PREFIX,
+        },
+        domain: {
+          name: domain.name,
+          version: domain.version,
           chainId,
-          hashes: {
-            message: messageHash,
-            domain: domainHash,
-            encoded: encodedHex,
-            verification: verificationHash,
-            prefix: SIP018_MSG_PREFIX,
-          },
-          domain: {
-            name: domain.name,
-            version: domain.version,
-            chainId,
-          },
-          verificationNote:
-            "Use sip018_verify with the 'verification' hash and signature to recover the signer. " +
-            "For on-chain verification, use secp256k1-recover? with sha256 of the 'encoded' hash.",
-        });
-      } catch (error) {
-        return createErrorResponse(error);
-      }
+        },
+        verificationNote:
+          "Use sip018_verify with the 'verification' hash and signature to recover the signer. " +
+          "For on-chain verification, use secp256k1-recover? with sha256 of the 'encoded' hash.",
+      });
     }
   );
 
@@ -773,40 +769,36 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ messageHash, signature, expectedSigner }) => {
-      try {
-        // Recover public key from signature
-        // The signature is in RSV format, messageHash should be the full encoded hash
-        const recoveredPubKey = publicKeyFromSignatureRsv(messageHash, signature);
+      // Recover public key from signature
+      // The signature is in RSV format, messageHash should be the full encoded hash
+      const recoveredPubKey = publicKeyFromSignatureRsv(messageHash, signature);
 
-        // Derive address from public key for current network
-        const recoveredAddress = getAddressFromPublicKey(recoveredPubKey, NETWORK);
+      // Derive address from public key for current network
+      const recoveredAddress = getAddressFromPublicKey(recoveredPubKey, NETWORK);
 
-        // Check against expected signer if provided
-        const isValid = expectedSigner
-          ? recoveredAddress === expectedSigner
-          : undefined;
+      // Check against expected signer if provided
+      const isValid = expectedSigner
+        ? recoveredAddress === expectedSigner
+        : undefined;
 
-        return createJsonResponse({
-          success: true,
-          recoveredPublicKey: recoveredPubKey,
-          recoveredAddress,
-          network: NETWORK,
-          verification: expectedSigner
-            ? {
-                expectedSigner,
-                isValid,
-                message: isValid
-                  ? "Signature is valid for the expected signer"
-                  : "Signature does NOT match expected signer",
-              }
-            : undefined,
-          note:
-            "The recovered address is derived from the public key recovered from the signature. " +
-            "For on-chain verification, use secp256k1-recover? and principal-of?.",
-        });
-      } catch (error) {
-        return createErrorResponse(error);
-      }
+      return createJsonResponse({
+        success: true,
+        recoveredPublicKey: recoveredPubKey,
+        recoveredAddress,
+        network: NETWORK,
+        verification: expectedSigner
+          ? {
+              expectedSigner,
+              isValid,
+              message: isValid
+                ? "Signature is valid for the expected signer"
+                : "Signature does NOT match expected signer",
+            }
+          : undefined,
+        note:
+          "The recovered address is derived from the public key recovered from the signature. " +
+          "For on-chain verification, use secp256k1-recover? and principal-of?.",
+      });
     }
   );
 
@@ -842,54 +834,50 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ message, domain }) => {
-      try {
-        // Use provided chainId or default to current network
-        const chainId = domain.chainId ?? CHAIN_IDS[NETWORK];
-        const domainCV = buildDomainCV(domain.name, domain.version, chainId);
+      // Use provided chainId or default to current network
+      const chainId = domain.chainId ?? CHAIN_IDS[NETWORK];
+      const domainCV = buildDomainCV(domain.name, domain.version, chainId);
 
-        // Convert message to ClarityValue
-        const messageCV = jsonToClarityValue(message);
+      // Convert message to ClarityValue
+      const messageCV = jsonToClarityValue(message);
 
-        // Compute hashes
-        const messageHash = hashStructuredData(messageCV);
-        const domainHash = hashStructuredData(domainCV);
+      // Compute hashes
+      const messageHash = hashStructuredData(messageCV);
+      const domainHash = hashStructuredData(domainCV);
 
-        // Compute the full encoded bytes and its sha256 hash
-        const encodedBytes = encodeStructuredDataBytes({
-          message: messageCV,
-          domain: domainCV,
-        });
-        const encodedHex = bytesToHex(encodedBytes);
-        const verificationHash = bytesToHex(hashSha256Sync(encodedBytes));
+      // Compute the full encoded bytes and its sha256 hash
+      const encodedBytes = encodeStructuredDataBytes({
+        message: messageCV,
+        domain: domainCV,
+      });
+      const encodedHex = bytesToHex(encodedBytes);
+      const verificationHash = bytesToHex(hashSha256Sync(encodedBytes));
 
-        return createJsonResponse({
-          success: true,
-          hashes: {
-            message: messageHash,
-            domain: domainHash,
-            encoded: encodedHex,
-            verification: verificationHash,
-          },
-          hashConstruction: {
-            prefix: SIP018_MSG_PREFIX,
-            formula: "verification = sha256(prefix || domainHash || messageHash)",
-            note: "Use 'verification' hash with sip018_verify. Use 'encoded' with secp256k1-recover? on-chain.",
-          },
-          domain: {
-            name: domain.name,
-            version: domain.version,
-            chainId,
-          },
-          network: NETWORK,
-          clarityVerification: {
-            note: "For on-chain verification, use sha256 of 'encoded' with secp256k1-recover?",
-            example:
-              "(secp256k1-recover? (sha256 encoded-data) signature)",
-          },
-        });
-      } catch (error) {
-        return createErrorResponse(error);
-      }
+      return createJsonResponse({
+        success: true,
+        hashes: {
+          message: messageHash,
+          domain: domainHash,
+          encoded: encodedHex,
+          verification: verificationHash,
+        },
+        hashConstruction: {
+          prefix: SIP018_MSG_PREFIX,
+          formula: "verification = sha256(prefix || domainHash || messageHash)",
+          note: "Use 'verification' hash with sip018_verify. Use 'encoded' with secp256k1-recover? on-chain.",
+        },
+        domain: {
+          name: domain.name,
+          version: domain.version,
+          chainId,
+        },
+        network: NETWORK,
+        clarityVerification: {
+          note: "For on-chain verification, use sha256 of 'encoded' with secp256k1-recover?",
+          example:
+            "(secp256k1-recover? (sha256 encoded-data) signature)",
+        },
+      });
     }
   );
 
@@ -911,39 +899,35 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ message }) => {
-      try {
-        const account = requireUnlockedWallet();
+      const account = requireUnlockedWallet();
 
-        // Hash the message with the Stacks prefix
-        const msgHash = hashMessage(message);
-        const msgHashHex = bytesToHex(msgHash);
+      // Hash the message with the Stacks prefix
+      const msgHash = hashMessage(message);
+      const msgHashHex = bytesToHex(msgHash);
 
-        // Sign the message hash
-        const signature = signMessageHashRsv({
-          messageHash: msgHashHex,
-          privateKey: account.privateKey,
-        });
+      // Sign the message hash
+      const signature = signMessageHashRsv({
+        messageHash: msgHashHex,
+        privateKey: account.privateKey,
+      });
 
-        return createJsonResponse({
-          success: true,
-          signature: "0x" + signature,
-          signatureFormat: "RSV (65 bytes hex)",
-          address: account.address,
-          signer: account.address,
-          network: NETWORK,
-          message: {
-            original: message,
-            prefix: STACKS_MSG_PREFIX,
-            prefixHex: bytesToHex(new TextEncoder().encode(STACKS_MSG_PREFIX)),
-            hash: msgHashHex,
-          },
-          verificationNote:
-            "Use stacks_verify_message with the original message and signature (without 0x prefix) to verify. " +
-            "Compatible with SIWS (Sign In With Stacks) authentication flows.",
-        });
-      } catch (error) {
-        return createErrorResponse(error);
-      }
+      return createJsonResponse({
+        success: true,
+        signature: "0x" + signature,
+        signatureFormat: "RSV (65 bytes hex)",
+        address: account.address,
+        signer: account.address,
+        network: NETWORK,
+        message: {
+          original: message,
+          prefix: STACKS_MSG_PREFIX,
+          prefixHex: bytesToHex(new TextEncoder().encode(STACKS_MSG_PREFIX)),
+          hash: msgHashHex,
+        },
+        verificationNote:
+          "Use stacks_verify_message with the original message and signature (without 0x prefix) to verify. " +
+          "Compatible with SIWS (Sign In With Stacks) authentication flows.",
+      });
     }
   );
 
@@ -977,64 +961,60 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ message, signature, expectedSigner }) => {
-      try {
-        // Hash the message with the Stacks prefix
-        const messageHash = hashMessage(message);
-        const messageHashHex = bytesToHex(messageHash);
+      // Hash the message with the Stacks prefix
+      const messageHash = hashMessage(message);
+      const messageHashHex = bytesToHex(messageHash);
 
-        // Strip 0x prefix if present (stacks_sign_message returns 0x-prefixed signature)
-        const normalizedSignature = signature.startsWith("0x") ? signature.slice(2) : signature;
+      // Strip 0x prefix if present (stacks_sign_message returns 0x-prefixed signature)
+      const normalizedSignature = signature.startsWith("0x") ? signature.slice(2) : signature;
 
-        // Recover public key from signature
-        const recoveredPubKey = publicKeyFromSignatureRsv(messageHashHex, normalizedSignature);
+      // Recover public key from signature
+      const recoveredPubKey = publicKeyFromSignatureRsv(messageHashHex, normalizedSignature);
 
-        // Derive address from public key for current network
-        const recoveredAddress = getAddressFromPublicKey(recoveredPubKey, NETWORK);
+      // Derive address from public key for current network
+      const recoveredAddress = getAddressFromPublicKey(recoveredPubKey, NETWORK);
 
-        // Verify the signature using the encryption library
-        const signatureValid = verifyMessageSignatureRsv({
-          signature: normalizedSignature,
-          message,
-          publicKey: recoveredPubKey,
-        });
+      // Verify the signature using the encryption library
+      const signatureValid = verifyMessageSignatureRsv({
+        signature: normalizedSignature,
+        message,
+        publicKey: recoveredPubKey,
+      });
 
-        // Check against expected signer if provided
-        const signerMatches = expectedSigner
-          ? recoveredAddress === expectedSigner
-          : undefined;
+      // Check against expected signer if provided
+      const signerMatches = expectedSigner
+        ? recoveredAddress === expectedSigner
+        : undefined;
 
-        const isFullyValid = signatureValid && (expectedSigner ? signerMatches : true);
+      const isFullyValid = signatureValid && (expectedSigner ? signerMatches : true);
 
-        return createJsonResponse({
-          success: true,
-          signatureValid,
-          recoveredPublicKey: recoveredPubKey,
-          recoveredAddress,
-          network: NETWORK,
-          message: {
-            original: message,
-            prefix: STACKS_MSG_PREFIX,
-            hash: messageHashHex,
-          },
-          verification: expectedSigner
-            ? {
-                expectedSigner,
-                signerMatches,
-                isFullyValid,
-                message: isFullyValid
-                  ? "Signature is valid and matches expected signer"
-                  : signatureValid
-                    ? "Signature is valid but does NOT match expected signer"
-                    : "Signature is invalid",
-              }
-            : undefined,
-          note:
-            "The recovered address is derived from the public key recovered from the signature. " +
-            "Compatible with SIWS (Sign In With Stacks) authentication flows.",
-        });
-      } catch (error) {
-        return createErrorResponse(error);
-      }
+      return createJsonResponse({
+        success: true,
+        signatureValid,
+        recoveredPublicKey: recoveredPubKey,
+        recoveredAddress,
+        network: NETWORK,
+        message: {
+          original: message,
+          prefix: STACKS_MSG_PREFIX,
+          hash: messageHashHex,
+        },
+        verification: expectedSigner
+          ? {
+              expectedSigner,
+              signerMatches,
+              isFullyValid,
+              message: isFullyValid
+                ? "Signature is valid and matches expected signer"
+                : signatureValid
+                  ? "Signature is valid but does NOT match expected signer"
+                  : "Signature is invalid",
+            }
+          : undefined,
+        note:
+          "The recovered address is derived from the public key recovered from the signature. " +
+          "Compatible with SIWS (Sign In With Stacks) authentication flows.",
+      });
     }
   );
 
@@ -1065,9 +1045,8 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ message, addressType }) => {
-      try {
-        const account = requireUnlockedWallet();
-        const btcNetwork = NETWORK === "testnet" ? BTC_TESTNET : BTC_MAINNET;
+      const account = requireUnlockedWallet();
+      const btcNetwork = NETWORK === "testnet" ? BTC_TESTNET : BTC_MAINNET;
 
         // Determine signing mode from addressType param or auto-detect from btcAddress prefix
         const useTaproot =
@@ -1214,9 +1193,6 @@ export function registerSigningTools(server: McpServer): void {
               "BIP-322 P2WPKH signatures contain a 2-item witness: ECDSA sig + compressed pubkey.",
           });
         }
-      } catch (error) {
-        return createErrorResponse(error);
-      }
     }
   );
 
@@ -1258,9 +1234,8 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ message, signature, address, expectedSigner }) => {
-      try {
-        // Use address param, fall back to expectedSigner for backward compat
-        const signerAddress = address || expectedSigner;
+      // Use address param, fall back to expectedSigner for backward compat
+      const signerAddress = address || expectedSigner;
 
         // Parse signature from hex or base64
         let signatureBytes: Uint8Array;
@@ -1442,9 +1417,6 @@ export function registerSigningTools(server: McpServer): void {
             }
           }
         }
-      } catch (error) {
-        return createErrorResponse(error);
-      }
     }
   );
 
@@ -1484,68 +1456,64 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ digest, auxRand, confirmBlindSign }) => {
-      try {
-        // Safety gate: require explicit confirmation before signing a raw digest.
-        // An agent could be tricked into signing a malicious transaction sighash
-        // because raw digests cannot be decoded into human-readable intent.
-        if (!confirmBlindSign) {
-          return createJsonResponse({
-            warning:
-              "schnorr_sign_digest signs a raw 32-byte digest that cannot be decoded or human-verified. " +
-              "If an attacker controls the digest value, they could trick you into signing a malicious " +
-              "transaction sighash or other sensitive data.",
-            digestToReview: digest,
-            instructions:
-              "Review the digest above. If you trust its origin and intent, re-call schnorr_sign_digest " +
-              "with the same parameters plus confirmBlindSign: true to proceed with signing.",
-          });
-        }
-
-        const account = requireUnlockedWallet();
-
-        if (!account.taprootPrivateKey || !account.taprootPublicKey) {
-          throw new Error(
-            "Taproot keys not available. Ensure the wallet has Taproot key derivation."
-          );
-        }
-
-        if (!account.taprootAddress) {
-          throw new Error(
-            "Taproot address not available for this account."
-          );
-        }
-
-        // Decode the digest (Zod schema enforces 64 hex chars = 32 bytes)
-        const digestBytes = hex.decode(digest);
-
-        // Optional auxiliary randomness for BIP-340 (Zod schema enforces 64 hex chars = 32 bytes when provided)
-        const auxBytes = auxRand ? hex.decode(auxRand) : undefined;
-
-        // Sign with Schnorr (BIP-340)
-        const signature = schnorr.sign(
-          digestBytes,
-          account.taprootPrivateKey,
-          auxBytes
-        );
-
-        // Get x-only public key (already stored as 32 bytes)
-        const xOnlyPubkey = account.taprootPublicKey;
-
+      // Safety gate: require explicit confirmation before signing a raw digest.
+      // An agent could be tricked into signing a malicious transaction sighash
+      // because raw digests cannot be decoded into human-readable intent.
+      if (!confirmBlindSign) {
         return createJsonResponse({
-          success: true,
-          signature: hex.encode(signature),
-          publicKey: hex.encode(xOnlyPubkey),
-          address: account.taprootAddress,
-          network: NETWORK,
-          signatureFormat: "BIP-340 Schnorr (64 bytes)",
-          publicKeyFormat: "x-only (32 bytes)",
-          note:
-            "For Taproot script-path spending, append sighash type byte if not SIGHASH_DEFAULT (0x00). " +
-            "Use this signature with OP_CHECKSIGADD for multisig witness assembly.",
+          warning:
+            "schnorr_sign_digest signs a raw 32-byte digest that cannot be decoded or human-verified. " +
+            "If an attacker controls the digest value, they could trick you into signing a malicious " +
+            "transaction sighash or other sensitive data.",
+          digestToReview: digest,
+          instructions:
+            "Review the digest above. If you trust its origin and intent, re-call schnorr_sign_digest " +
+            "with the same parameters plus confirmBlindSign: true to proceed with signing.",
         });
-      } catch (error) {
-        return createErrorResponse(error);
       }
+
+      const account = requireUnlockedWallet();
+
+      if (!account.taprootPrivateKey || !account.taprootPublicKey) {
+        throw new Error(
+          "Taproot keys not available. Ensure the wallet has Taproot key derivation."
+        );
+      }
+
+      if (!account.taprootAddress) {
+        throw new Error(
+          "Taproot address not available for this account."
+        );
+      }
+
+      // Decode the digest (Zod schema enforces 64 hex chars = 32 bytes)
+      const digestBytes = hex.decode(digest);
+
+      // Optional auxiliary randomness for BIP-340 (Zod schema enforces 64 hex chars = 32 bytes when provided)
+      const auxBytes = auxRand ? hex.decode(auxRand) : undefined;
+
+      // Sign with Schnorr (BIP-340)
+      const signature = schnorr.sign(
+        digestBytes,
+        account.taprootPrivateKey,
+        auxBytes
+      );
+
+      // Get x-only public key (already stored as 32 bytes)
+      const xOnlyPubkey = account.taprootPublicKey;
+
+      return createJsonResponse({
+        success: true,
+        signature: hex.encode(signature),
+        publicKey: hex.encode(xOnlyPubkey),
+        address: account.taprootAddress,
+        network: NETWORK,
+        signatureFormat: "BIP-340 Schnorr (64 bytes)",
+        publicKeyFormat: "x-only (32 bytes)",
+        note:
+          "For Taproot script-path spending, append sighash type byte if not SIGHASH_DEFAULT (0x00). " +
+          "Use this signature with OP_CHECKSIGADD for multisig witness assembly.",
+      });
     }
   );
 
@@ -1576,35 +1544,31 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ digest, signature, publicKey }) => {
-      try {
-        // Decode inputs (Zod schema enforces correct hex lengths:
-        // digest=64 chars/32 bytes, signature=128 chars/64 bytes, publicKey=64 chars/32 bytes)
-        const digestBytes = hex.decode(digest);
-        const signatureBytes = hex.decode(signature);
-        const publicKeyBytes = hex.decode(publicKey);
+      // Decode inputs (Zod schema enforces correct hex lengths:
+      // digest=64 chars/32 bytes, signature=128 chars/64 bytes, publicKey=64 chars/32 bytes)
+      const digestBytes = hex.decode(digest);
+      const signatureBytes = hex.decode(signature);
+      const publicKeyBytes = hex.decode(publicKey);
 
-        // Verify the Schnorr signature
-        const isValid = schnorr.verify(
-          signatureBytes,
-          digestBytes,
-          publicKeyBytes
-        );
+      // Verify the Schnorr signature
+      const isValid = schnorr.verify(
+        signatureBytes,
+        digestBytes,
+        publicKeyBytes
+      );
 
-        return createJsonResponse({
-          success: true,
-          isValid,
-          digest,
-          signature,
-          publicKey,
-          message: isValid
-            ? "Signature is valid for the given digest and public key"
-            : "Signature is INVALID",
-          note:
-            "BIP-340 Schnorr verification. Use for validating signatures in Taproot multisig coordination.",
-        });
-      } catch (error) {
-        return createErrorResponse(error);
-      }
+      return createJsonResponse({
+        success: true,
+        isValid,
+        digest,
+        signature,
+        publicKey,
+        message: isValid
+          ? "Signature is valid for the given digest and public key"
+          : "Signature is INVALID",
+        note:
+          "BIP-340 Schnorr verification. Use for validating signatures in Taproot multisig coordination.",
+      });
     }
   );
 
@@ -1652,8 +1616,7 @@ export function registerSigningTools(server: McpServer): void {
       },
     },
     async ({ kind, content, tags, created_at, keySource }) => {
-      try {
-        const account = requireUnlockedWallet();
+      const account = requireUnlockedWallet();
 
         // Resolve key source (default: NIP-06 nostr key)
         const source = keySource ?? "nostr";
@@ -1742,9 +1705,6 @@ export function registerSigningTools(server: McpServer): void {
             "Publish the 'event' object to Nostr relays via WebSocket (Nostr protocol). " +
             "The 'npub' is the NIP-19 encoded public key for sharing your Nostr identity.",
         });
-      } catch (error) {
-        return createErrorResponse(error);
-      }
     }
   );
 }
