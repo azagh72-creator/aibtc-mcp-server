@@ -176,6 +176,9 @@ LAYER 5 — PoXAgents Execution Bounds
 | `whale-market-intelligence` | Every 3h | Price tracking, arb detection |
 | `whale-lp-growth` | Monday 10:00 | LP addition execution |
 | `whale-alex-listing` | Manual | ALEX pool creation (pending approval) |
+| `whale-nostr-broadcast` | Daily 09:00 | Live WHALE stats broadcast to Nostr (pool, burns, agents) |
+| `whale-burn-tracker` | Every 6h | Monitor burn address — alert on Nostr if new burns |
+| `whale-agent-recruitment` | Monday 11:00 | Weekly agent recruitment campaign on Nostr |
 
 ---
 
@@ -299,14 +302,34 @@ Write operations require a valid partnership agreement — see [Terms of Use](re
 
 ---
 
+## Execution Intelligence API ✅ LIVE
+
+x402 paid endpoints delivering real-time WHALE on-chain data.
+
+**Base URL:** `https://whale-execution-api-production.up.railway.app`
+**Payment:** STX via `X-PAYMENT` header — no account, no sign-up
+
+| Endpoint | Cost | Data |
+|----------|------|------|
+| `GET /api/intelligence/pool` | 100 microSTX | Live WHALE/wSTX pool state |
+| `GET /api/execution/stream` | 1000 microSTX | On-chain execution activity |
+| `GET /api/execution/burns` | 1000 microSTX | WHALE burn statistics |
+| `GET /api/execution/agents` | 1000 microSTX | Agent scoring leaderboard |
+| `GET /api/execution/stats` | 1000 microSTX | Full platform statistics |
+| `POST /api/intelligence/premium` | 10000 microSTX | Custom analytics query |
+
+Source: `skills/flying-whale-marketplace/whale-execution-api/`
+
+---
+
 ## Reference Guides
 
 | Guide | Description |
 |-------|-------------|
 | [Marketplace](references/marketplace.md) | Skill listing, pricing, WHALE payment flows |
 | [Intelligence](references/intelligence.md) | Analytics, reporting, market data |
-| [Order Book](references/orderbook.md) | Order types, matching, fee structure |
-| [Bounties & Signals](references/bounties-signals.md) | Bounty lifecycle, claims, approvals |
+| [Execution Layer](references/execution-layer.md) | x402 execution API architecture + deployment status |
+| [Economic Activation](references/economic-activation.md) | Revenue roadmap, flywheel, KPIs |
 | [On-Chain Contracts](references/on-chain-contracts.md) | Full contract registry, TXIDs, ownership proof |
 | [Terms of Use](references/terms-of-use.md) | Agreement-First Policy, IP rights, prohibitions |
 | [Quantum Security](references/quantum-security.md) | **OWNER EYES ONLY** — Quantum-secure architecture, session keys, hedging, governance |
