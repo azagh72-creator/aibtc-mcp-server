@@ -1,4 +1,13 @@
-# Flying Whale - Intelligence Analytics Reference
+# Flying Whale — Intelligence Analytics Reference
+
+<!--
+  COPYRIGHT 2026 Flying Whale - zaghmout.btc | ERC-8004 #54
+  ALL RIGHTS RESERVED — Flying Whale Proprietary License v2.0
+  Agreement-First Policy applies. See terms-of-use.md.
+-->
+
+**Owner:** zaghmout.btc | ERC-8004 #54
+**Policy:** All intelligence data is proprietary. Commercial use requires partnership agreement.
 
 ## Overview
 
