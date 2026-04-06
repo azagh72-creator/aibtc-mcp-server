@@ -22,7 +22,14 @@ const SCORING_CONTRACT = `${OWNER}.whale-scoring-v1`;
 const ACCESS_CONTRACT = `${OWNER}.whale-access-v1`;
 const VERIFY_CONTRACT = `${OWNER}.whale-verify-v1`;
 const GOVERNANCE_CONTRACT = `${OWNER}.whale-governance-v1`;
+const GATE_CONTRACT = `${OWNER}.whale-gate-v1`;
+const ROUTER_CONTRACT = `${OWNER}.whale-router-v1`;
 const DEAD_ADDRESS = 'SP000000000000000000002Q6VF78';
+
+// WHALE tier thresholds (micro-WHALE, 6 decimals)
+const SCOUT_MIN = 100_000_000;    // 100 WHALE
+const AGENT_MIN = 1_000_000_000;  // 1,000 WHALE
+const ELITE_MIN = 10_000_000_000; // 10,000 WHALE
 const WHALE_TOTAL_SUPPLY = 12_616_800;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -142,6 +149,60 @@ function decodePoolEvent(event: Record<string, unknown>): { xBalance: number; yB
   } catch { return null; }
 }
 
+// ─── WHALE Gate Helper ────────────────────────────────────────────────────────
+
+async function getWhaleBalance(address: string): Promise<number> {
+  try {
+    const res = await fetch(`${STACKS_API}/v2/contracts/call-read/${OWNER}/whale-v3/get-balance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender: OWNER, arguments: [`0x0516${Buffer.from(address).toString('hex')}`] }),
+    });
+    const data: Record<string, unknown> = await res.json();
+    if (data.okay && typeof data.result === 'string') {
+      const hex = (data.result as string).replace('0x0701', '');
+      const raw = parseInt(hex, 16);
+      return isNaN(raw) ? 0 : raw;
+    }
+  } catch { /* ignore */ }
+  return 0;
+}
+
+function getWhaleTier(bal: number): string {
+  if (bal >= ELITE_MIN) return 'Elite';
+  if (bal >= AGENT_MIN) return 'Agent';
+  if (bal >= SCOUT_MIN) return 'Scout';
+  return 'None';
+}
+
+function buildGateResponse(bal: number, address: string) {
+  const tier = getWhaleTier(bal);
+  const hasAccess = bal >= SCOUT_MIN;
+  return {
+    address,
+    whale_balance: bal / 1_000_000,
+    tier,
+    has_access: hasAccess,
+    features: {
+      marketplace: bal >= SCOUT_MIN,
+      intelligence: bal >= AGENT_MIN,
+      execution_api: bal >= AGENT_MIN,
+      premium_data: bal >= ELITE_MIN,
+      governance: bal >= ELITE_MIN,
+    },
+    upgrade: hasAccess ? null : {
+      message: 'Buy WHALE to unlock all Flying Whale features',
+      buy_at: 'https://app.bitflow.finance',
+      contract: WHALE_CONTRACT,
+      min_scout: '100 WHALE',
+      min_agent: '1,000 WHALE',
+      min_elite: '10,000 WHALE',
+    },
+    gate_contract: GATE_CONTRACT,
+    router_contract: ROUTER_CONTRACT,
+  };
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -177,7 +238,7 @@ app.use('*', async (c, next) => {
 
 app.get('/', (c) => c.json({
   service: 'Flying Whale Execution API',
-  version: '1.2.0',
+  version: '1.3.0',
   os: 'Sovereign Agent OS — 7-Layer Bitcoin AI Infrastructure',
   owner: 'zaghmout.btc | ERC-8004 #54 | Council 485pts',
   copyright: 'COPYRIGHT 2026 Flying Whale — ALL RIGHTS RESERVED',
@@ -196,8 +257,41 @@ app.get('/', (c) => c.json({
   },
   payment: { tokens: ['STX'], header: 'X-PAYMENT' },
   marketplace: 'https://flying-whale-marketplace-production.up.railway.app',
-  verify_integration: 'SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-verify-v1',
+  verify_integration: VERIFY_CONTRACT,
+  gate_integration: GATE_CONTRACT,
+  router_integration: ROUTER_CONTRACT,
+  access_model: {
+    free: 'none — all real data is gated',
+    scout: '100 WHALE → marketplace access',
+    agent: '1,000 WHALE → intelligence + execution API',
+    elite: '10,000 WHALE → all features + premium data',
+    buy_at: 'https://app.bitflow.finance — WHALE/wSTX Pool #42',
+  },
+  philosophy: 'WHALE is not just a token. It is your membership, your key, your vote. No WHALE — no access.',
 }));
+
+// ─── WHALE Gate: Check Membership ────────────────────────────────────────────
+
+app.get('/api/gate/check', async (c) => {
+  const address = c.req.query('address');
+  if (!address) {
+    return c.json({
+      error: 'address parameter required',
+      example: '/api/gate/check?address=SP322...',
+      buy_whale: 'https://app.bitflow.finance',
+    }, 400);
+  }
+  const bal = await getWhaleBalance(address);
+  const gate = buildGateResponse(bal, address);
+  return c.json({
+    success: true,
+    data: gate,
+    message: gate.has_access
+      ? `Access GRANTED — ${gate.tier} tier (${gate.whale_balance} WHALE)`
+      : `Access DENIED — Buy WHALE at app.bitflow.finance to unlock Flying Whale`,
+    copyright: 'COPYRIGHT 2026 Flying Whale — ALL RIGHTS RESERVED',
+  });
+});
 
 app.get('/health', (c) => c.json({
   status: 'ok',
