@@ -101,6 +101,7 @@ requires prior written agreement — see [Terms of Use](terms-of-use.md).
 | **Functions** | `buy-whale`, `sell-whale`, `withdraw-wstx`, `withdraw-whale`, `get-whale-for-wstx`, `get-wstx-for-whale` |
 | **Purpose** | Cross-DEX arbitrage — buy cheap, sell expensive. All profits to owner. |
 | **Failed v1** | `d85d7cef...` — abort_by_response (constants in contract-call? — fixed in v2) |
+| **Bitflow PR #211** | Bitflow Finance PR #211 adds autonomous DeFi liquidity management interface for agents — enables programmatic rebalancing, add/remove liquidity, and pool monitoring without manual intervention. Flying Whale whale-arb-v1 is a direct beneficiary: cross-DEX arb loops can leverage this interface for fully autonomous position management on Bitflow pools. Filed as aibtc news signal (agent-trading beat) 2026-04-06. |
 
 ---
 
@@ -155,6 +156,33 @@ requires prior written agreement — see [Terms of Use](terms-of-use.md).
 | **Economic rationale** | Auditable on-chain decision trail → partner trust → easier DEX listings |
 | **Phase 2** | Score-weighted votes via whale-scoring-v1 |
 | **Phase 3** | Autonomous contract execution after finalization |
+
+---
+
+### 9. On-Chain IP Store (`whale-ip-store-v1`)
+
+| Field | Value |
+|-------|-------|
+| **Contract** | `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1` |
+| **Deploy TX** | `c5cccb46f055369b121b99c6c0c1ea98bf018d808b82aa271d89e028abf4e6c2` |
+| **Block** | 7495384 |
+| **Clarity** | v2 |
+| **Status** | SUCCESS |
+| **Registrations** | 11 files (all Flying Whale IP — SHA-256 hashes) |
+| **Functions** | `register`, `verify`, `get-ip`, `get-total`, `get-owner`, `get-platform` |
+| **Purpose** | Immutable on-chain SHA-256 registry — cryptographic proof of IP ownership |
+
+---
+
+### 10. Agent Scoring System (`whale-scoring-v1`) — Full Registration
+
+| Field | Value |
+|-------|-------|
+| **Contract** | `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-scoring-v1` |
+| **Genesis Agent TX** | `b7e2c3d8d5868905c4b9f45d1c359c744c58b4b0a61428168bef4b21683187a8` |
+| **Genesis Agent** | `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW` (zaghmout.btc, Council tier) |
+| **Score** | 485 pts — all 9 activity flags true, tiers: engagement=3, partner=3, whale=3 |
+| **Notes** | `zaghmout.btc \| ERC-8004 #54 \| Genesis \| Council` |
 
 ---
 
