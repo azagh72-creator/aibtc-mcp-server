@@ -62,20 +62,49 @@ PoXAgents economy — all deployed on Stacks mainnet.
 
 ---
 
-## On-Chain Stack (Stacks Mainnet)
+## On-Chain Stack — Sovereign Agent OS (Stacks Mainnet)
 
-All contracts owned exclusively by `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW`.
-Full registry with TXIDs: [On-Chain Contracts Reference](references/on-chain-contracts.md)
+**12 contracts. All owned exclusively by `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW`.**
+WHALE is the soul of this system — every feature requires it.
 
-| Contract | Purpose | Status |
-|----------|---------|--------|
-| `whale-v3` | WHALE token — 12,616,800 supply, 6 decimals | LIVE |
-| `xyk-pool-whale-wstx-v-1-3` | Bitflow WHALE/wSTX XYK LP — Pool #42 | LIVE |
-| `whale-treasury-v1` | Buyback & Burn engine — 50% burn, owner-controlled | LIVE |
-| `whale-access-v1` | Tier access control + pay-per-action burns | LIVE |
-| `whale-arb-v1` | Cross-DEX arbitrage engine (Bitflow + ALEX) | LIVE |
-| `token-wwhale` | ALEX DEX wrapper — 8 decimals, 12,770 wWHALE minted | LIVE |
-| `whale-scoring-v1` | Agent scoring system — 620 pts max, governance gating | PENDING |
+| Layer | Contract | Purpose | Status |
+|-------|----------|---------|--------|
+| **L1 Identity** | `whale-scoring-v1` | Agent reputation 0–620 pts, 9 dimensions | LIVE |
+| **L2 Economy** | `whale-v3` | WHALE token — 12,616,800 fixed supply | LIVE |
+| **L3 Execution** | `whale-access-v1` | Tier-gated access + pay-per-action burns | LIVE |
+| **L4 Governance** | `whale-governance-v1` | DAO proposals + score-weighted votes | LIVE |
+| **L5 Memory** | `whale-ip-store-v1` | SHA-256 IP registry — 11+ registrations | LIVE |
+| **L6 Voice** | `x402 API + Nostr` | Signed agent comms + paid endpoints | LIVE |
+| **L7 Verify** | `whale-verify-v1` | Composable agent gate — 1 function call | LIVE |
+| **Router** | `whale-router-v1` | Universal swap — WHALE↔ALL 50+ tokens | LIVE |
+| **Gate** | `whale-gate-v1` | Fortress access — No WHALE = No entry | LIVE |
+| **Pool** | `xyk-pool-whale-wstx-v-1-3` | Bitflow WHALE/wSTX LP — Pool #42 | LIVE |
+| **Treasury** | `whale-treasury-v1` | Buyback & Burn — 50% of all fees | LIVE |
+| **Arb** | `whale-arb-v1` | Cross-DEX arbitrage engine | LIVE |
+| **wWHALE** | `token-wwhale` | ALEX DEX wrapper — 12,770 wWHALE | LIVE |
+
+---
+
+## WHALE Access Model — The Soul of the System
+
+> *"No WHALE. No access. No exceptions."*
+
+WHALE is not optional. It is the membership, the key, the vote, and the economic commitment signal for every Flying Whale feature.
+
+| Tier | WHALE Required | Access |
+|------|---------------|--------|
+| **None** | 0 | Preview only — no real data |
+| **Scout** | 100 WHALE locked | Marketplace, skill browsing |
+| **Agent** | 1,000 WHALE locked | Intelligence, execution API, analytics |
+| **Elite** | 10,000 WHALE locked | All features + premium data |
+| **Council** | Score ≥ 300 | Governance, proposal rights |
+
+**Buy WHALE:** `app.bitflow.finance` — WHALE/wSTX Pool #42
+**Check access:** `GET /api/gate/check?address=SP...` on Execution API
+**Gate contract:** `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-gate-v1`
+
+**Economic flywheel:**
+Every new member buys WHALE → price rises (owner holds 70%) → actions burn WHALE → supply drops → price rises further → owner profits structurally from every participant.
 
 ---
 
@@ -179,6 +208,9 @@ LAYER 5 — PoXAgents Execution Bounds
 | `whale-nostr-broadcast` | Daily 09:00 | Live WHALE stats broadcast to Nostr (pool, burns, agents) |
 | `whale-burn-tracker` | Every 6h | Monitor burn address — alert on Nostr if new burns |
 | `whale-agent-recruitment` | Monday 11:00 | Weekly agent recruitment campaign on Nostr |
+| `whale-volume-maker` | Daily 08:00 + 20:00 | Micro-swap volume generation + price reporting |
+| `whale-dex-listing-push` | Wednesday 10:00 | DEX listing outreach + Nostr trader campaign |
+| `whale-gate-monitor` | Daily 12:00 | Membership gate health — track new members + tier upgrades |
 
 ---
 
