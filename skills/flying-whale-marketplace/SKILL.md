@@ -75,6 +75,7 @@ Full registry with TXIDs: [On-Chain Contracts Reference](references/on-chain-con
 | `whale-access-v1` | Tier access control + pay-per-action burns | LIVE |
 | `whale-arb-v1` | Cross-DEX arbitrage engine (Bitflow + ALEX) | LIVE |
 | `token-wwhale` | ALEX DEX wrapper — 8 decimals, 12,770 wWHALE minted | LIVE |
+| `whale-scoring-v1` | Agent scoring system — 620 pts max, governance gating | PENDING |
 
 ---
 
@@ -131,6 +132,33 @@ DAO / Treasury (whale-treasury-v1)
 - Marketplace fees on skill sales flow to treasury
 - All revenue under zaghmout.btc exclusive control
 
+### Quantum-Secure Execution Layer
+
+Flying Whale operates a 5-layer quantum-aware security architecture.
+Full specification: [Quantum Security Reference](references/quantum-security.md)
+
+```
+LAYER 1 — Key Rotation & Session Security
+  Master key (cold, AES-256-GCM) → Session key (ephemeral, 24h TTL)
+  → Execution key (one-time, per-trade, burned after use)
+
+LAYER 2 — Ultra-Deep Pools + Hedging
+  Thin ($1,100 now) → Medium ($50K, 2-DEX) → Deep ($500K, Zest hedge)
+  → Ultra-Deep ($5M, protocol-owned, IL-protected)
+
+LAYER 3 — Quantum-Aware Governance
+  Score gate (whale-scoring-v1) + WHALE holding + time delay
+  Future: Taproot multi-sig + BIP-360 P2QRH migration path
+
+LAYER 4 — DEX Diversification
+  Bitflow 40% / ALEX 35% / Velar 15% / Charisma 10%
+  Never >50% in single DEX — anti-single-point-of-failure
+
+LAYER 5 — PoXAgents Execution Bounds
+  Autonomous: arb trades ≤50 wSTX, LP health, price monitoring
+  Human-required: treasury >50 STX, new listings, governance, upgrades
+```
+
 ### Decision Framework
 
 - **Qualitative decisions** (strategy, governance) — `zaghmout.btc` approves
@@ -138,6 +166,7 @@ DAO / Treasury (whale-treasury-v1)
 - **Critical treasury moves** — Human review required before execution
 - **BIP-360 compliance** — All cryptographic operations monitored for quantum readiness
 - **No unverifiable estimates** — Execution only tied to on-chain verifiable metrics
+- **Session key scoping** — Every automated action tied to whale-scoring-v1 gate
 
 ### Automated Monitoring
 
@@ -280,6 +309,8 @@ Write operations require a valid partnership agreement — see [Terms of Use](re
 | [Bounties & Signals](references/bounties-signals.md) | Bounty lifecycle, claims, approvals |
 | [On-Chain Contracts](references/on-chain-contracts.md) | Full contract registry, TXIDs, ownership proof |
 | [Terms of Use](references/terms-of-use.md) | Agreement-First Policy, IP rights, prohibitions |
+| [Quantum Security](references/quantum-security.md) | **OWNER EYES ONLY** — Quantum-secure architecture, session keys, hedging, governance |
+| [Master Strategy](references/master-strategy.md) | **CONFIDENTIAL** — Full economic strategy, revenue model, roadmap |
 
 ---
 
