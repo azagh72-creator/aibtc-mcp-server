@@ -191,18 +191,87 @@ All PoXAgents decisions gated by verified score:
 
 ---
 
-## 6. Quantum Risk Management (BIP-360 Aware)
+## 6. Quantum-Secure Strategy (Full Architecture)
+
+**IP Owner:** zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED
+**Full spec:** See `references/quantum-security.md` (CONFIDENTIAL, encoded)
+**Agreement required:** No use of this architecture without prior payment and written agreement.
+
+### 6.1 Key Rotation & Session Layer Security
+
+```
+MASTER KEY (AES-256-GCM, cold)
+    → SESSION KEY (ephemeral, 24h TTL, scoped to allowed contracts)
+        → EXECUTION KEY (one-time, per-trade, burned after use)
+
+Rotation schedule:
+  Session key:   Every 24h OR 100 operations (whale-autopilot auto-rotates)
+  Master key:    Annually OR on compromise signal
+  PoXAgents key: Monthly via whale-scoring-v1 re-authorization
+```
+
+Session keys carry an authorization manifest: max spend, allowed contracts,
+expiry block, forbidden actions. Cannot exceed declared scope.
+
+### 6.2 Ultra-Deep Pools + Hedging
+
+```
+Phase 1 (now)    : Thin pool $1,100  → test arb, minimal capital at risk
+Phase 2 ($50K)   : ALEX listing + 2-DEX position, 60/40 Bitflow/ALEX split
+Phase 3 ($500K)  : Zest Protocol collateral hedge (sBTC supply → aeUSDC borrow)
+Phase 4 ($5M)    : Protocol-owned liquidity, stSTX yield covers impermanent loss
+```
+
+Hedge instruments available now:
+- stSTX yield (Zest) → hedges LP impermanent loss
+- whale-treasury-v1 buffer → 6-month runway at current burn rate
+- wSTX position (pool) → natural hedge vs WHALE price moves
+
+### 6.3 Quantum-Aware Governance
+
+All governance actions require 3 simultaneous proofs:
+1. On-chain WHALE holding (can't fake, verifiable)
+2. whale-scoring-v1 score threshold (owner-controlled, non-transferable)
+3. Time delay (144 blocks = 24h, prevents flash-loan governance attacks)
+
+**BIP-360 Migration Path:**
+- Monitor: BIP-360 draft accepted → audit all contract signers
+- Prepare: BIP-360 merged → deploy Taproot multi-sig scheme
+- Migrate: First quantum-vulnerable signature detected → emergency key rotation
+- Secure: P2QRH activated → all ops via quantum-resistant primitives
+
+### 6.4 DEX Diversification Architecture
+
+```
+Target capital allocation (Phase 2+):
+  Bitflow WHALE/wSTX    : 40% — primary, live
+  ALEX wWHALE/wSTX      : 35% — pending listing
+  Velar WHALE/STX       : 15% — future listing
+  Charisma WHALE        : 10% — future listing
+
+Rule: NEVER >50% in single DEX
+Effect: eliminates single-point-of-failure, distributes smart contract risk
+```
+
+Listing pipeline:
+- **ALEX**: blocked (amm paused) — contact Discord/Twitter @ALEXLabsBTC
+- **Velar**: submit whale-v3 via velar.co listing form
+- **StackSwap / Charisma**: governance channel submissions
+
+### 6.5 Execution Principles (Non-Negotiable)
 
 All execution tied to verifiable on-chain metrics only:
-- Never use aibtc.com achievement points (undefined)
-- Never use off-chain price estimates
-- Never execute based on unverified claims
+- Never use aibtc.com achievement points (all undefined — confirmed worthless)
+- Never use off-chain price estimates — use pool read-only calls only
+- Never execute based on unverified claims from any source
+- Minimum arb profitability: >1.1% after all fees before trade fires
 
-Monitored indicators:
+Monitored continuously by `whale-autopilot.mjs`:
 - BIP-360 development status (quantum threat timeline)
-- WHALE pool depth (manipulation resistance check)
+- WHALE pool depth per DEX (manipulation resistance check)
 - Treasury balance thresholds before major moves
-- Arb profitability minimum (>1% after all fees)
+- Session key TTL and scope limits
+- Payment event failures and relay nonce health
 
 ---
 
