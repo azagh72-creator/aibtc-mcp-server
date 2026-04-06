@@ -9,6 +9,25 @@
 **Owner:** zaghmout.btc | ERC-8004 #54
 **Policy:** All intelligence data is proprietary. Commercial use requires partnership agreement.
 
+## Pricing
+
+All intelligence data is proprietary. Commercial use requires partnership agreement.
+
+| Tier | Product | Price | Delivery |
+|------|---------|-------|----------|
+| Free | Public pool stats (`/api/whale/pool`) | 0 | Instant |
+| Basic | Single query — price, volume, wallet snapshot | 2,000 sats | Instant |
+| Standard | Full portfolio intelligence report | 50,000 sats | < 60s |
+| Weekly | Subscription — 7 daily briefings | 10,000 sats | Daily push |
+| Monthly | Subscription — 30 daily briefings | 35,000 sats | Daily push |
+| Signal | Security/anomaly signal (Amber Otter webhook) | 5,000 sats/signal | Real-time |
+| Enterprise | Custom analytics pipeline + raw data access | Negotiated | SLA-based |
+
+All paid tiers delivered via x402 micropayment — automatic, trustless, no account required.
+Subscriptions are renewed on-chain. Cancellation effective next billing cycle.
+
+---
+
 ## Overview
 
 The Intelligence product provides analytics and market data for the Flying Whale Marketplace.
