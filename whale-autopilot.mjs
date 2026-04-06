@@ -133,12 +133,7 @@ const log = {
 // ============================================================================
 
 function loadState() {
-  try {
-    if (existsSync(CONFIG.stateFile)) {
-      return JSON.parse(readFileSync(CONFIG.stateFile, 'utf8'));
-    }
-  } catch {}
-  return {
+  const defaults = {
     totalArbTrades: 0,
     totalProfitwSTX: 0,
     totalMarketplaceEvents: 0,
@@ -147,7 +142,24 @@ function loadState() {
     pendingTxids: [],
     errors: [],
     startedAt: new Date().toISOString(),
+    sessionStartedAt: new Date().toISOString(),
+    sessionOpCount: 0,
+    alexUnpausedAt: null,
+    lastKeyRotationAlert: null,
+    apiRateLimitHits: 0,
   };
+  try {
+    if (existsSync(CONFIG.stateFile)) {
+      const saved = JSON.parse(readFileSync(CONFIG.stateFile, 'utf8'));
+      // Migrate old state: merge with defaults so new fields always exist
+      return { ...defaults, ...saved,
+        sessionStartedAt: new Date().toISOString(), // fresh session each launch
+        sessionOpCount: 0,
+        apiRateLimitHits: saved.apiRateLimitHits || 0,
+      };
+    }
+  } catch {}
+  return defaults;
 }
 
 function saveState(state) {
@@ -583,6 +595,10 @@ function printStatus(priceData, ownerBal, treasuryBal) {
     console.log(` Treasury : ${twstx} wSTX | ${twhale} WHALE`);
   }
 
+  const sessionAgeH = ((Date.now() - new Date(STATE.sessionStartedAt).getTime()) / 3_600_000).toFixed(1);
+  const sessionOk = STATE.sessionOpCount < SESSION_MAX_OPS && parseFloat(sessionAgeH) < SESSION_MAX_HOURS;
+  console.log(` Session  : ${sessionAgeH}h / ${SESSION_MAX_HOURS}h | ops ${STATE.sessionOpCount}/${SESSION_MAX_OPS} | ${sessionOk ? 'HEALTHY' : '⚠ ROTATE KEY'}`);
+  console.log(` ALEX     : ${STATE.alexUnpausedAt ? '*** UNPAUSED — LIST NOW ***' : 'paused (monitoring)'} | RateLimit hits: ${STATE.apiRateLimitHits}`);
   console.log(` Trades   : ${STATE.totalArbTrades} | Profit: ${(STATE.totalProfitwSTX / 1_000_000).toFixed(6)} wSTX`);
   console.log(` Events   : ${STATE.totalMarketplaceEvents} | Pending TX: ${STATE.pendingTxids.length}`);
 
@@ -604,6 +620,133 @@ function printStatus(priceData, ownerBal, treasuryBal) {
 }
 
 // ============================================================================
+// SESSION KEY ROTATION MONITOR
+// ============================================================================
+
+const SESSION_MAX_HOURS = 24;
+const SESSION_MAX_OPS   = 100;
+
+function checkSessionHealth() {
+  const startedMs = new Date(STATE.sessionStartedAt).getTime();
+  const ageHours  = (Date.now() - startedMs) / 3_600_000;
+  const ops       = STATE.sessionOpCount;
+
+  if (ageHours >= SESSION_MAX_HOURS || ops >= SESSION_MAX_OPS) {
+    const reason = ageHours >= SESSION_MAX_HOURS
+      ? `age ${ageHours.toFixed(1)}h >= ${SESSION_MAX_HOURS}h`
+      : `ops ${ops} >= ${SESSION_MAX_OPS}`;
+
+    log.warn(`[SESSION] Rotation required — ${reason}`);
+    log.warn('[SESSION] Action: run wallet_lock → wallet_unlock with new session');
+    log.warn('[SESSION] Or call: mcp__aibtc-mcp-server__wallet_rotate_password');
+
+    // Record alert (don't spam — once per check)
+    if (STATE.lastKeyRotationAlert !== new Date().toDateString()) {
+      STATE.lastKeyRotationAlert = new Date().toDateString();
+      STATE.errors.push({ type: 'session-rotation-needed', reason, ts: new Date().toISOString() });
+    }
+    return false; // session stale
+  }
+
+  log.debug(`[SESSION] Healthy — age ${ageHours.toFixed(1)}h / ${SESSION_MAX_HOURS}h | ops ${ops}/${SESSION_MAX_OPS}`);
+  return true; // session healthy
+}
+
+// ============================================================================
+// ALEX UNPAUSE MONITOR
+// ============================================================================
+
+// Polls ALEX amm-swap-pool-v1-1 is-paused flag every check cycle.
+// When it flips to false → arb engine activates automatically.
+const ALEX_AMM = 'SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0KBR9';
+const ALEX_AMM_NAME = 'amm-swap-pool-v1-1';
+
+async function checkAlexUnpaused() {
+  if (STATE.alexUnpausedAt) return true; // already confirmed
+
+  try {
+    const res = await fetch(`${CONFIG.hiro}/v2/contracts/call-read/${ALEX_AMM}/${ALEX_AMM_NAME}/get-paused`, {
+      method: 'POST',
+      headers: HIRO_HEADERS,
+      body: JSON.stringify({ sender: OWNER, arguments: [] }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+
+    // Returns (ok false) when unpaused → hex 0a03
+    if (data.okay && data.result) {
+      const isUnpaused = data.result.includes('0a03') || data.result === '0x0a03';
+      if (isUnpaused) {
+        STATE.alexUnpausedAt = new Date().toISOString();
+        log.profit('[ALEX] *** amm-swap-pool-v1-1 IS UNPAUSED! ARB ENGINE READY! ***');
+        log.profit('[ALEX] Action: run create-pool to list wWHALE/wSTX pair');
+        // Update DEX registry
+        DEX_REGISTRY.alex.status = 'ready-to-list';
+        return true;
+      }
+    }
+    log.debug('[ALEX] Still paused — monitoring...');
+    return false;
+  } catch (e) {
+    log.debug('[ALEX] Pause check failed:', e.message);
+    return false;
+  }
+}
+
+// ============================================================================
+// RATE LIMIT GUARD
+// ============================================================================
+
+// Wraps hiroGet with rate limit detection and backoff
+const apiCallQueue = [];
+let apiPaused = false;
+
+async function hiroGetSafe(path) {
+  if (apiPaused) {
+    log.debug('[RATE] API paused — skipping', path);
+    return null;
+  }
+  try {
+    const data = await hiroGet(path);
+    return data;
+  } catch (e) {
+    if (e.message && e.message.includes('429')) {
+      STATE.apiRateLimitHits++;
+      log.warn(`[RATE] 429 rate limit hit #${STATE.apiRateLimitHits} — backing off 60s`);
+      apiPaused = true;
+      setTimeout(() => { apiPaused = false; log.info('[RATE] Backoff complete — resuming'); }, 60_000);
+    }
+    throw e;
+  }
+}
+
+// ============================================================================
+// FIRST GOVERNANCE PROPOSAL: ALEX LISTING
+// ============================================================================
+
+// After whale-governance-v1 confirms, submit a proposal to formalize ALEX listing decision.
+// This is called once when governance contract is detected as live.
+let alexListingProposalSubmitted = false;
+
+async function maybeSubmitAlexListingProposal(account) {
+  if (alexListingProposalSubmitted || !account) return;
+
+  // Check if governance contract is live
+  try {
+    const info = await hiroGetSafe(`/v2/contracts/interface/${OWNER}/whale-governance-v1`);
+    if (!info || info.error) return;
+  } catch { return; }
+
+  alexListingProposalSubmitted = true;
+  log.info('[GOV] whale-governance-v1 is live — governance ready');
+  log.info('[GOV] First proposal: List WHALE on ALEX DEX (contact @ALEXLabsBTC)');
+  log.info('[GOV] Submit via: call_contract whale-governance-v1 submit-proposal');
+  log.info('[GOV]   title: "List WHALE on ALEX DEX"');
+  log.info('[GOV]   category: "listing"');
+  log.info('[GOV]   voting-blocks: 288 (48h)');
+}
+
+// ============================================================================
 // MAIN LOOP
 // ============================================================================
 
@@ -612,15 +755,25 @@ let loopCount = 0;
 
 async function priceLoop() {
   loopCount++;
+  STATE.sessionOpCount++;
 
   try {
-    // 1. Track pending TXs
+    // 1. Session key health check
+    checkSessionHealth();
+
+    // 2. ALEX unpaused check (every 10 loops = every 5min at 30s interval)
+    if (loopCount % 10 === 1) {
+      await checkAlexUnpaused();
+      await maybeSubmitAlexListingProposal(account);
+    }
+
+    // 3. Track pending TXs
     await trackPendingTxs();
 
-    // 2. Get current price and check arb
+    // 4. Get current price and check arb
     const arbResult = await checkArbOpportunity();
 
-    // 3. Get balances (every 5 loops to reduce API calls)
+    // 5. Get balances (every 5 loops to reduce API calls)
     let ownerBal = null;
     let treasuryBal = null;
     if (loopCount % 5 === 1) {
@@ -630,7 +783,7 @@ async function priceLoop() {
       ]);
     }
 
-    // 4. Print status dashboard
+    // 6. Print status dashboard
     printStatus(arbResult, ownerBal, treasuryBal);
     saveState(STATE);
 

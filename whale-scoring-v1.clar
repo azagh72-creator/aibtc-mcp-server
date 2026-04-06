@@ -231,11 +231,11 @@
       })
     )
       (map-set agent-scores agent score-data)
-      (when is-new (var-set total-agents (+ (var-get total-agents) u1)))
-      ;; Recompute and cache score
-      (match (compute-score agent)
-        score (begin (map-set score-cache agent score) (ok score))
-        err (err err)
+      (and is-new (var-set total-agents (+ (var-get total-agents) u1)))
+      ;; Recompute and cache score (compute-score never errors, unwrap-panic is safe)
+      (let ((score (unwrap-panic (compute-score agent))))
+        (map-set score-cache agent score)
+        (ok score)
       )
     )
   )
@@ -248,15 +248,13 @@
     (asserts! (<= tier u3) ERR_INVALID_TIER)
     (match (map-get? agent-scores agent)
       data
-      (begin
+      (let ((score (unwrap-panic (compute-score agent))))
         (map-set agent-scores agent (merge data {
           partner-tier: tier,
           last-updated: burn-block-height
         }))
-        (match (compute-score agent)
-          score (begin (map-set score-cache agent score) (ok score))
-          err (err err)
-        )
+        (map-set score-cache agent score)
+        (ok score)
       )
       ERR_AGENT_NOT_FOUND
     )
@@ -270,15 +268,13 @@
     (asserts! (<= tier u3) ERR_INVALID_TIER)
     (match (map-get? agent-scores agent)
       data
-      (begin
+      (let ((score (unwrap-panic (compute-score agent))))
         (map-set agent-scores agent (merge data {
           whale-tier: tier,
           last-updated: burn-block-height
         }))
-        (match (compute-score agent)
-          score (begin (map-set score-cache agent score) (ok score))
-          err (err err)
-        )
+        (map-set score-cache agent score)
+        (ok score)
       )
       ERR_AGENT_NOT_FOUND
     )
@@ -289,9 +285,9 @@
 (define-public (refresh-score (agent principal))
   (begin
     (asserts! (is-eq tx-sender OWNER) ERR_NOT_OWNER)
-    (match (compute-score agent)
-      score (begin (map-set score-cache agent score) (ok score))
-      err (err err)
+    (let ((score (unwrap-panic (compute-score agent))))
+      (map-set score-cache agent score)
+      (ok score)
     )
   )
 )

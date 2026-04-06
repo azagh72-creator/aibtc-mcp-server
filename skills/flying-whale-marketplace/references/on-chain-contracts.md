@@ -123,6 +123,41 @@ requires prior written agreement — see [Terms of Use](terms-of-use.md).
 
 ---
 
+---
+
+### 7. Agent Scoring (`whale-scoring-v1`)
+
+| Field | Value |
+|-------|-------|
+| **Contract** | `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-scoring-v1` |
+| **Deploy TX** | `707794dac20dd704bcb9bb68b16cdc096b83bd382d8d427372801447a0e0ebf0` |
+| **Clarity** | v2 |
+| **Status** | SUCCESS |
+| **Max Score** | 620 points (9 activity + 4 engagement + 2 streak + 3 partner + 3 whale tiers) |
+| **Governance gate** | Basic=50pts, Full=150pts, Council=300pts |
+| **Bug fixed** | `(when ...)` → `(and ...)` — Clarity has no `when` keyword |
+| **Purpose** | PoXAgents execution gating + governance weight + partner tiers |
+
+---
+
+### 8. Governance (`whale-governance-v1`)
+
+| Field | Value |
+|-------|-------|
+| **Contract** | `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-governance-v1` |
+| **Deploy TX** | `be5487906121a72e6c64645e5779713bd74f494889413fb9b21aa8867a28a239` |
+| **Clarity** | v2 |
+| **Status** | SUCCESS |
+| **Min voting window** | 144 blocks (~24h) |
+| **Vote weight** | Declared WHALE balance (Phase 2: auto-verified) |
+| **Proposal status** | OPEN(0) / PASSED(1) / REJECTED(2) / CANCELLED(3) |
+| **Functions** | `submit-proposal`, `cast-vote`, `finalize-proposal`, `cancel-proposal`, `mark-executed` |
+| **Economic rationale** | Auditable on-chain decision trail → partner trust → easier DEX listings |
+| **Phase 2** | Score-weighted votes via whale-scoring-v1 |
+| **Phase 3** | Autonomous contract execution after finalization |
+
+---
+
 ## Failed / Superseded Deploys
 
 | TX | Contract | Reason |
@@ -130,6 +165,7 @@ requires prior written agreement — see [Terms of Use](terms-of-use.md).
 | `d85d7cef...` | whale-arb-v1 v1 | abort_by_response — used constants in contract-call? |
 | `632929663fdf88...` | Earlier LP attempt | Clarity version mismatch |
 | `3e881aa0ef93...` | ALEX create-pool | abort_by_response — amm-swap-pool-v1-1 is paused |
+| `928f848916f922cd...` | whale-scoring-v1 v1 | abort_by_response — `(when ...)` is not Clarity syntax |
 
 ---
 
