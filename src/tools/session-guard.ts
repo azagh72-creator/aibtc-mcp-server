@@ -1,16 +1,28 @@
 /**
- * session-guard.ts
- * MCP Overthinking Attack Protection Layer
- * COPYRIGHT 2026 Flying Whale - zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED
+ * session-guard.ts — MCPTox Attack Protection Layer
+ *
+ * COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED
+ * Flying Whale Proprietary License v2.0 — Agreement-First Policy
+ * Owner: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
+ * On-chain IP: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1
+ * Enforcement: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1
+ *
+ * Multi-Layer Sovereignty Stack v2.0.0 — Layer 3: Policy VM (Attack Defense)
+ * Sovereign Agent OS — 8-Layer Bitcoin AI Infrastructure on Stacks mainnet
  *
  * Defends against MCPTox-class attacks (arxiv March 2026, adversa.ai March 2026):
  * - Cyclic overthinking loops induced by malicious tool servers (142x token amplification)
  * - Denial-of-Wallet: repeated on-chain transactions before hard caps trigger
  * - Sequential tool call explosions draining x402 API budgets
+ * - Indirect prompt injection via trusted content channels
  *
- * Two defense layers:
- *   1. Hard cap on wallet-sensitive calls per session (default: 20)
- *   2. Loop detection: same tool N times consecutively = abort
+ * Defense Layers (Policy VM — L3 of Sovereignty Stack):
+ *   L3A. Static rules: blocklist, admin overrides
+ *   L3B. Hard cap on wallet-sensitive calls per session (default: 20)
+ *   L3C. Loop detection: same tool N times consecutively = abort
+ *   L3D. Rapid-fire detection: N calls/10s to same tool = Denial-of-Wallet block
+ *
+ * No WHALE = No Access. Buy: https://app.bitflow.finance — WHALE/wSTX Pool #42
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
