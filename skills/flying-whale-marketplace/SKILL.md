@@ -56,8 +56,10 @@ PoXAgents economy — all deployed on Stacks mainnet.
 ## Platform
 
 **Base URL:** `https://flying-whale-marketplace-production.up.railway.app`
+**Execution API:** `https://whale-execution-api-production.up.railway.app`
 **Health Check:** `GET /api/health`
-**Version:** 9.0.0
+**Version:** 9.1.0
+**Sovereignty Stack:** Multi-Layer Sovereignty Stack v2.0.0 — ACTIVE
 **Live Stats:** 114 skills | 11 categories | 18,940 downloads | 4.7 avg rating
 
 ---
@@ -76,12 +78,32 @@ WHALE is the soul of this system — every feature requires it.
 | **L5 Memory** | `whale-ip-store-v1` | SHA-256 IP registry — 11+ registrations | LIVE |
 | **L6 Voice** | `x402 API + Nostr` | Signed agent comms + paid endpoints | LIVE |
 | **L7 Verify** | `whale-verify-v1` | Composable agent gate — 1 function call | LIVE |
+| **L8 Audit** | `whale-signal-registry-v1` | On-chain signal audit trail — permanent | LIVE |
 | **Router** | `whale-router-v1` | Universal swap — WHALE↔ALL 50+ tokens | LIVE |
 | **Gate** | `whale-gate-v1` | Fortress access — No WHALE = No entry | LIVE |
 | **Pool** | `xyk-pool-whale-wstx-v-1-3` | Bitflow WHALE/wSTX LP — Pool #42 | LIVE |
 | **Treasury** | `whale-treasury-v1` | Buyback & Burn — 50% of all fees | LIVE |
 | **Arb** | `whale-arb-v1` | Cross-DEX arbitrage engine | LIVE |
 | **wWHALE** | `token-wwhale` | ALEX DEX wrapper — 12,770 wWHALE | LIVE |
+
+---
+
+## Multi-Layer Sovereignty Stack v2.0.0
+
+**Deployed:** whale-execution-api v2.0.0 · SHA-256: `08d5125645514de290cab7957b23b02031a95759e1e3bba4e89bc8b54a4b2579`
+**On-chain proof:** TX `c52887b40aff538d06aaddacd028b45ccf1e56a986899aca8a0b39cb5ee26201` · `whale-signal-registry-v1`
+
+Five application layers enforced on every request — no bypass path:
+
+| Layer | Name | Function |
+|-------|------|----------|
+| **L1** | Identity | x402 BIP-322 signature — anonymous rejected |
+| **L2** | Intent | Every action logged pre-execution with unique intent ID |
+| **L3A** | Static Rules | Blocklist + forbidden patterns + session rules |
+| **L3B** | Rate Limiter | 60 calls/min per address — auto-block on exceed |
+| **L3C** | Behavioral Analyzer | 8 calls/10s → permanent session block — MCPTox defense |
+| **L4** | WHALE Gate | Balance check on Stacks mainnet — no WHALE no execute |
+| **L5** | Settlement Verifier | X-Fw-* ownership headers on every response |
 
 ---
 
@@ -211,6 +233,11 @@ LAYER 5 — PoXAgents Execution Bounds
 | `whale-volume-maker` | Daily 08:00 + 20:00 | Micro-swap volume generation + price reporting |
 | `whale-dex-listing-push` | Wednesday 10:00 | DEX listing outreach + Nostr trader campaign |
 | `whale-gate-monitor` | Daily 12:00 | Membership gate health — track new members + tier upgrades |
+| `whale-auto-swap` | Daily 08:10 + 20:10 | WHALE→wSTX auto-swap when STX < 3 |
+| `whale-treasury-deposit` | Daily 08:23 | Deposit surplus STX to whale-treasury-v1 |
+| `whale-news-signals` | 06:30 UTC | File aibtc.news signals (governance, security, distribution) |
+| `whale-guard-v1` | 2026-04-08 06:00 | Guard contract deploy |
+| `whale-bip322-security-signal` | 2026-04-08 10:30 | BIP-322 security signal on-chain |
 
 ---
 
