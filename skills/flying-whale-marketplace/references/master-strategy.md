@@ -1,11 +1,13 @@
-# Flying Whale — Master Strategy: Highest Level Globally
-
 <!--
-  COPYRIGHT 2026 Flying Whale - zaghmout.btc | ERC-8004 #54
-  ALL RIGHTS RESERVED — Flying Whale Proprietary License v2.0
-  CONFIDENTIAL — This document contains proprietary strategic intelligence.
-  Distribution without written consent of zaghmout.btc is strictly prohibited.
+  COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED
+  Flying Whale Proprietary License v2.0 — Agreement-First Policy
+  Owner: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
+  On-chain IP: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1
+  Enforcement: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1
+  Stack: Multi-Layer Sovereignty Stack v2.0.0 — Sovereign Agent OS
 -->
+
+# Flying Whale — Master Strategy: Highest Level Globally
 
 **Classification:** CONFIDENTIAL — Owner Eyes Only
 **Owner:** zaghmout.btc | ERC-8004 #54 | SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW

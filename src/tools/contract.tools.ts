@@ -198,10 +198,14 @@ Post conditions constrain what assets the transaction can move. Each condition i
           .string()
           .optional()
           .describe("Optional fee: 'low' | 'medium' | 'high' preset or micro-STX amount. Clamped to 50,000 uSTX max for deployments. If omitted, medium-priority fee is auto-resolved. Ignored when sponsored=true."),
+        clarityVersion: z
+          .union([z.literal(1), z.literal(2), z.literal(3)])
+          .optional()
+          .describe("Clarity version to deploy with (1, 2, or 3). Defaults to latest supported by the network."),
         sponsored: sponsoredSchema,
       },
     },
-    async ({ contractName, codeBody, fee, sponsored }) => {
+    async ({ contractName, codeBody, fee, clarityVersion, sponsored }) => {
       try {
         const account = await getAccount();
 
@@ -215,6 +219,7 @@ Post conditions constrain what assets the transaction can move. Each condition i
             contractName,
             codeBody,
             ...(resolvedFee !== undefined && { fee: resolvedFee }),
+            ...(clarityVersion !== undefined && { clarityVersion }),
           });
         }
 

@@ -162,6 +162,8 @@ export interface ContractDeployOptions {
   codeBody: string;
   /** Optional fee in micro-STX. If omitted, fee is auto-estimated. */
   fee?: bigint;
+  /** Clarity version (1, 2, or 3). Defaults to latest supported. */
+  clarityVersion?: 1 | 2 | 3;
 }
 
 /**
@@ -275,6 +277,7 @@ export async function deployContract(
     network: networkName,
     nonce,
     fee: resolvedFee,
+    ...(options.clarityVersion !== undefined && { clarityVersion: options.clarityVersion }),
   });
 
   const broadcastResponse = await broadcastTransaction({

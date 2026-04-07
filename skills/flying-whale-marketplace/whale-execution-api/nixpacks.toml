@@ -1,3 +1,8 @@
+# Flying Whale Execution API — Nixpacks Build Config
+# COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED
+# Flying Whale Proprietary License v2.0 — Multi-Layer Sovereignty Stack v2.0.0
+# Owner: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
+
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 

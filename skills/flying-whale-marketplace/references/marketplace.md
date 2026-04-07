@@ -1,8 +1,12 @@
 # Flying Whale — Skill Marketplace Reference
 
 <!--
-  COPYRIGHT 2026 Flying Whale - zaghmout.btc | ERC-8004 #54
-  ALL RIGHTS RESERVED — Flying Whale Proprietary License v2.0
+  COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED
+  Flying Whale Proprietary License v2.0 — Agreement-First Policy
+  Owner: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
+  On-chain IP: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1
+  Enforcement: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1
+  Stack: Multi-Layer Sovereignty Stack v2.0.0 — Sovereign Agent OS
 -->
 
 ## Overview
