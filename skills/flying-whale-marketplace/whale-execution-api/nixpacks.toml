@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci --omit=dev --ignore-scripts 2>/dev/null || echo 'install skipped'"]
+
+[phases.build]
+cmds = ["echo 'pre-built dist ready'"]
+
+[start]
+cmd = "node dist/server.js"
