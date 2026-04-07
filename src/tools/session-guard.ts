@@ -153,8 +153,24 @@ class SessionGuard {
   }
 }
 
-// Singleton guard per process (one MCP session = one process)
-const guard = new SessionGuard();
+// ─── Session Registry ─────────────────────────────────────────────────────────
+//
+// Each McpServer instance gets its own SessionGuard, keyed by server identity.
+// This ensures that in multi-session transports (HTTP/SSE) where multiple
+// McpServer instances share a process, call counts are not conflated across
+// clients. For the primary stdio transport (one process per client connection)
+// this degenerates to a single guard — identical behaviour to a singleton.
+
+const sessionRegistry = new WeakMap<object, SessionGuard>();
+
+function getGuard(server: object): SessionGuard {
+  let g = sessionRegistry.get(server);
+  if (!g) {
+    g = new SessionGuard();
+    sessionRegistry.set(server, g);
+  }
+  return g;
+}
 
 // ─── MCP Server Wrapper ────────────────────────────────────────────────────────
 
@@ -162,6 +178,9 @@ const guard = new SessionGuard();
  * Wraps server.registerTool to inject session guard checks before each tool handler.
  * Call this BEFORE registering any tools.
  * Returns a cleanup function.
+ *
+ * Guard state is scoped to the McpServer instance via WeakMap, so multiple
+ * concurrent sessions in an HTTP/SSE deployment each get independent counters.
  *
  * Usage:
  *   const cleanup = withSessionGuard(server);
@@ -183,6 +202,7 @@ export function withSessionGuard(server: McpServer): () => void {
     // Wrap the handler with guard check
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const guardedHandler = async (...args: any[]) => {
+      const guard = getGuard(server);
       const check = guard.check(name);
       if (!check.allowed) {
         // Return error in MCP tool response format
@@ -213,4 +233,5 @@ export function withSessionGuard(server: McpServer): () => void {
   };
 }
 
-export { guard, WALLET_SENSITIVE, MAX_WALLET_CALLS_PER_SESSION };
+// Export factory for tests and direct access
+export { getGuard, WALLET_SENSITIVE, MAX_WALLET_CALLS_PER_SESSION };

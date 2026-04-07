@@ -11,6 +11,11 @@
 ;;
 ;; Deployed: block 7500763
 ;; TX: cb15fed7a26e325fa333d849a4c2080aa4b51e7fe79cf99f49506d04fd93022b
+;;
+;; ⚠️  CORRECTION (2026-04-07): The on-chain data below lists wrapped-stx-token as y-token.
+;; The pool's ACTUAL registered y-token is SP2VCQJGH7PHP2DJK7Z0V48AGBHQAW3R3ZW1QF4N.wstx
+;; Always use SP2VCQJGH7PHP2DJK7Z0V48AGBHQAW3R3ZW1QF4N.wstx for all swap calls.
+;; Using wrapped-stx-token causes (err u2) — ERR_INVALID_Y_TOKEN at xyk-core-v-1-2.
 
 (define-constant OWNER   'SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW)
 (define-constant FEE-BPS u55)
@@ -34,7 +39,7 @@
     pool-contract: 'SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.xyk-pool-whale-wstx-v-1-3,
     core-contract: 'SM1793C4R5PZ4NS4VQ4WMP7SKKYVH8JZEWSZ9HCCR.xyk-core-v-1-2,
     x-token:       'SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3,
-    y-token:       'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.wrapped-stx-token,
+    y-token:       'SP2VCQJGH7PHP2DJK7Z0V48AGBHQAW3R3ZW1QF4N.wstx,
     fee-bps:       FEE-BPS,
     dex:           "Bitflow XYK",
     pair:          "WHALE/wSTX"
@@ -47,7 +52,7 @@
     step-1-function: "swap-x-for-y",
     step-1-pool:     'SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.xyk-pool-whale-wstx-v-1-3,
     step-1-x-token:  'SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3,
-    step-1-y-token:  'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.wrapped-stx-token,
+    step-1-y-token:  'SP2VCQJGH7PHP2DJK7Z0V48AGBHQAW3R3ZW1QF4N.wstx,
     step-2-note:     "Use any ALEX/Velar/Bitflow wSTX pool as leg-2",
     ui:              "https://app.bitflow.finance",
     pool-id:         u42
