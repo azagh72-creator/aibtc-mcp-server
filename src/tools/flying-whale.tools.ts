@@ -151,7 +151,7 @@ async function marketplaceFetch(
     const res = await fetch(url.toString(), {
       headers: {
         "Accept": "application/json",
-        "X-Fw-Agent": "aibtc-mcp-server — Flying Whale Marketplace Skill",
+        "X-Fw-Agent": "aibtc-mcp-server - Flying Whale Marketplace Skill",
         "X-Fw-Stack": "Multi-Layer Sovereignty Stack v2.0.0",
         "X-Fw-Caller": callerAddress,
       },
