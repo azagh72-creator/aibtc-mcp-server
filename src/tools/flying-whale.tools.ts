@@ -21,14 +21,21 @@
  * No WHALE = 403 WHALE Gate error. No exceptions. No fallbacks.
  *
  * MCP tools (sovereignty-stamped, WHALE-gated):
- * - flying_whale_list_skills      — Browse 114 skills across 11 categories [Scout]
- * - flying_whale_get_skill        — Detailed skill info (pricing, author, args) [Scout]
- * - flying_whale_list_categories  — All categories with counts [Scout]
- * - flying_whale_get_stats        — Platform stats (skills, volume, agents) [Scout]
- * - flying_whale_list_bounties    — Active bounties (task-based rewards) [Scout]
- * - flying_whale_get_bounty       — Bounty details (reward, deadline, requirements) [Scout]
- * - flying_whale_list_orders      — Order book (buy/sell for skill trading) [Agent]
- * - flying_whale_get_intelligence — Intelligence reports and market analytics [Agent]
+ * Scout tier (100 WHALE):
+ * - flying_whale_list_skills      — Browse 114 skills across 11 categories
+ * - flying_whale_get_skill        — Detailed skill info (pricing, author, args)
+ * - flying_whale_list_categories  — All categories with counts
+ * - flying_whale_get_stats        — Platform stats (skills, volume, agents)
+ * - flying_whale_list_bounties    — Active bounties (task-based rewards)
+ * - flying_whale_get_bounty       — Bounty details (reward, deadline, requirements)
+ * - flying_whale_get_regime       — Market regime for STX/BTC (Wyckoff + RSI + signal)
+ * - flying_whale_get_whale_price  — Real-time WHALE price, liquidity, pool depth
+ * - flying_whale_registry_lookup  — Agent registry lookup (whale-registry-v2 on-chain)
+ * Agent tier (1,000 WHALE):
+ * - flying_whale_list_orders      — Order book (buy/sell for skill trading)
+ * - flying_whale_get_intelligence — Intelligence reports and market analytics
+ * - flying_whale_risk_score       — 5-factor token risk score (0–100)
+ * - flying_whale_wallet_risk      — Wallet trust profile and classification
  *
  * Execution API: https://whale-execution-api-production.up.railway.app
  * Marketplace:   https://flying-whale-marketplace-production.up.railway.app
@@ -457,6 +464,153 @@ export function registerFlyingWhaleTools(server: McpServer): void {
           limit,
         });
         return createJsonResponse(data);
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Market Regime — Scout tier ----------
+
+  server.registerTool(
+    "flying_whale_get_regime",
+    {
+      description:
+        "Real-time market regime for STX and BTC — Wyckoff phase, RSI, volatility, SMA crossovers. " +
+        "Returns actionable composite signal (ACCUMULATE / DISTRIBUTE / HOLD / EXIT) with confidence score. " +
+        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        asset: z
+          .enum(["stx", "btc", "both"])
+          .optional()
+          .describe("Asset to analyze: 'stx', 'btc', or 'both' (default: both)"),
+      },
+    },
+    async ({ callerAddress, asset = "both" }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+        const path = asset === "both" ? "/api/regime" : `/api/regime/${asset}`;
+        const data = await marketplaceFetch(path, callerAddress);
+        return createJsonResponse({ ...data as object, _sovereignty: SOVEREIGNTY_STAMP });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Token Risk Score — Agent tier ----------
+
+  server.registerTool(
+    "flying_whale_risk_score",
+    {
+      description:
+        "5-factor deterministic risk score for any Stacks token (0–100). " +
+        "Factors: liquidity depth, holder concentration, contract age, volume/market-cap ratio, price stability. " +
+        "Returns tier classification (SAFE / MODERATE / HIGH / EXTREME). " +
+        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        contractId: z
+          .string()
+          .min(1)
+          .describe("Token contract ID (e.g. SP322...whale-v3) or principal.name format"),
+      },
+    },
+    async ({ callerAddress, contractId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const data = await marketplaceFetch(`/api/risk-score/${encodeURIComponent(contractId)}`, callerAddress);
+        return createJsonResponse({ ...data as object, _sovereignty: SOVEREIGNTY_STAMP });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Wallet Risk — Agent tier ----------
+
+  server.registerTool(
+    "flying_whale_wallet_risk",
+    {
+      description:
+        "On-chain wallet trust profile for any Stacks address. " +
+        "Analyzes: activity age, tx diversity, balance tier, DeFi participation, rug exposure history. " +
+        "Returns trust score (0–100) and classification (TRUSTED / ACTIVE / FRESH / SUSPICIOUS). " +
+        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        address: z
+          .string()
+          .min(1)
+          .describe("Stacks address to analyze (SP...)"),
+      },
+    },
+    async ({ callerAddress, address }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const data = await marketplaceFetch(`/api/risk-address/${address}`, callerAddress);
+        return createJsonResponse({ ...data as object, _sovereignty: SOVEREIGNTY_STAMP });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- WHALE Price — Scout tier ----------
+
+  server.registerTool(
+    "flying_whale_get_whale_price",
+    {
+      description:
+        "Real-time WHALE token price, liquidity, volume, and market cap from Bitflow pool #42. " +
+        "Returns price in STX and USD, 24h change, pool depth, and WHALE tier thresholds in USD. " +
+        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+      },
+    },
+    async ({ callerAddress }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+        const data = await marketplaceFetch("/api/whale/price", callerAddress);
+        return createJsonResponse({ ...data as object, _sovereignty: SOVEREIGNTY_STAMP });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Agent Registry Lookup — Scout tier ----------
+
+  server.registerTool(
+    "flying_whale_registry_lookup",
+    {
+      description:
+        "Look up any agent in the Flying Whale Universal Agent Registry (whale-registry-v2 — Stacks mainnet). " +
+        "Query by STX address, BTC address, ETH address, or agent name. " +
+        "Returns: agent ID, chain, type (AI/Human/Bot/DAO/Protocol), score, active status. " +
+        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        query: z
+          .string()
+          .min(1)
+          .describe("STX address (SP...), native address, or agent name to look up"),
+        chain: z
+          .enum(["btc", "stx", "eth", "sol", "other"])
+          .optional()
+          .describe("Chain filter for native address lookup"),
+      },
+    },
+    async ({ callerAddress, query, chain }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+        const data = await marketplaceFetch("/api/registry/agents", callerAddress, {
+          q: query,
+          chain,
+        });
+        return createJsonResponse({ ...data as object, _sovereignty: SOVEREIGNTY_STAMP });
       } catch (error) {
         return createErrorResponse(error);
       }
