@@ -103,7 +103,7 @@ PoXAgents economy — all deployed on Stacks mainnet.
 
 ## On-Chain Stack — Sovereign Agent OS (Stacks Mainnet)
 
-**12 contracts. All owned exclusively by `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW`.**
+**14 contracts. All owned exclusively by `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW`.**
 WHALE is the soul of this system — every feature requires it.
 
 | Layer | Contract | Purpose | Status |
@@ -119,6 +119,8 @@ WHALE is the soul of this system — every feature requires it.
 | **Router** | `whale-router-v1` | Universal swap — WHALE↔ALL 50+ tokens | LIVE |
 | **Gate** | `whale-gate-v1` | Fortress access — No WHALE = No entry | LIVE |
 | **Pool** | `xyk-pool-whale-wstx-v-1-3` | Bitflow WHALE/wSTX LP — Pool #42 | LIVE |
+| **sBTC Pool** | `whale-pool-sbtc-v1` | Sovereign WHALE/sBTC XYK AMM — 0.3% fee | LIVE |
+| **Stake** | `whale-stake-v1` | Work Token staking — 20-80% fee discounts | LIVE |
 | **Treasury** | `whale-treasury-v1` | Buyback & Burn — 50% of all fees | LIVE |
 | **Arb** | `whale-arb-v1` | Cross-DEX arbitrage engine | LIVE |
 | **wWHALE** | `token-wwhale` | ALEX DEX wrapper — 12,770 wWHALE | LIVE |
@@ -157,6 +159,19 @@ WHALE is not optional. It is the membership, the key, the vote, and the economic
 | **Agent** | 10,000 WHALE | Intelligence, audit, strategy, execution API |
 | **Elite** | 100,000 WHALE | Portfolio analysis, all features + priority |
 | **Council** | Score ≥ 300 | Governance, proposal rights |
+
+### Intelligence Fee Discounts (whale-stake-v1)
+
+Stake WHALE to get discounts on every intelligence API call:
+
+| Stake Tier | WHALE Staked | Discount |
+|------------|-------------|----------|
+| **Scout** | 10,000,000 WHALE | 20% off |
+| **Agent** | 100,000,000 WHALE | 40% off |
+| **Elite** | 1,000,000,000 WHALE | 60% off |
+| **Council** | 10,000,000,000 WHALE | 80% off |
+
+Pass `X-Stx-Address` header or `stx_address` param to activate discount. Verified on-chain via `whale-stake-v1.get-tier`.
 
 **Buy WHALE:** `app.bitflow.finance` — WHALE/wSTX Pool #42
 **Check access:** `GET /api/gate/check?address=SP...` on Execution API
