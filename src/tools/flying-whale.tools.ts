@@ -51,9 +51,9 @@ const HIRO_API = "https://api.hiro.so";
 
 // Access tier thresholds (in micro-WHALE, 6 decimals)
 const WHALE_THRESHOLDS = {
-  scout:  100n * 1_000_000n,      // 100 WHALE
-  agent:  1_000n * 1_000_000n,    // 1,000 WHALE
-  elite:  10_000n * 1_000_000n,   // 10,000 WHALE
+  scout:  1_000n * 1_000_000n,    // 1,000 WHALE
+  agent:  10_000n * 1_000_000n,   // 10,000 WHALE
+  elite:  100_000n * 1_000_000n,  // 100,000 WHALE
 } as const;
 
 type WhaleTier = keyof typeof WHALE_THRESHOLDS;

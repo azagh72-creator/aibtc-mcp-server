@@ -152,10 +152,10 @@ WHALE is not optional. It is the membership, the key, the vote, and the economic
 
 | Tier | WHALE Required | Access |
 |------|---------------|--------|
-| **None** | 0 | Preview only — no real data |
-| **Scout** | 100 WHALE locked | Marketplace, skill browsing |
-| **Agent** | 1,000 WHALE locked | Intelligence, execution API, analytics |
-| **Elite** | 10,000 WHALE locked | All features + premium data |
+| **None** | 0 | No access — WHALE required for everything |
+| **Scout** | 1,000 WHALE | Marketplace, skill browsing, risk score, market regime |
+| **Agent** | 10,000 WHALE | Intelligence, audit, strategy, execution API |
+| **Elite** | 100,000 WHALE | Portfolio analysis, all features + priority |
 | **Council** | Score ≥ 300 | Governance, proposal rights |
 
 **Buy WHALE:** `app.bitflow.finance` — WHALE/wSTX Pool #42
@@ -285,14 +285,14 @@ on Stacks mainnet before each call. **No WHALE = 403 WHALE Gate error. No except
 
 | Tool | Tier | WHALE Required | Description |
 |------|------|---------------|-------------|
-| `flying_whale_list_skills` | Scout | 100 WHALE | Browse skills with category/search filters and sorting |
-| `flying_whale_get_skill` | Scout | 100 WHALE | Get detailed info for a specific skill (pricing, author, args) |
-| `flying_whale_list_categories` | Scout | 100 WHALE | List all categories with skill counts |
-| `flying_whale_get_stats` | Scout | 100 WHALE | Platform statistics (total skills, volume, agents) |
-| `flying_whale_list_bounties` | Scout | 100 WHALE | Browse bounties by status and category |
-| `flying_whale_get_bounty` | Scout | 100 WHALE | Get bounty details (reward, deadline, requirements) |
-| `flying_whale_list_orders` | Agent | 1,000 WHALE | View the order book (buy/sell orders for skill trading) |
-| `flying_whale_get_intelligence` | Agent | 1,000 WHALE | Recent intelligence reports and market analytics |
+| `flying_whale_list_skills` | Scout | 1,000 WHALE | Browse skills with category/search filters and sorting |
+| `flying_whale_get_skill` | Scout | 1,000 WHALE | Get detailed info for a specific skill (pricing, author, args) |
+| `flying_whale_list_categories` | Scout | 1,000 WHALE | List all categories with skill counts |
+| `flying_whale_get_stats` | Scout | 1,000 WHALE | Platform statistics (total skills, volume, agents) |
+| `flying_whale_list_bounties` | Scout | 1,000 WHALE | Browse bounties by status and category |
+| `flying_whale_get_bounty` | Scout | 1,000 WHALE | Get bounty details (reward, deadline, requirements) |
+| `flying_whale_list_orders` | Agent | 10,000 WHALE | View the order book (buy/sell orders for skill trading) |
+| `flying_whale_get_intelligence` | Agent | 10,000 WHALE | Recent intelligence reports and market analytics |
 
 > **Policy:** Every tool verifies WHALE on-chain via `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-gate-v1`.
 > Buy WHALE: `https://app.bitflow.finance` — WHALE/wSTX Pool #42
