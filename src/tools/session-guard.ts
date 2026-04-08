@@ -199,7 +199,8 @@ class SessionGuard {
   private blockReason = "";
 
   check(toolName: string): { allowed: boolean; reason?: string } {
-    if (this.blocked) {
+    // Read-only tools always pass — only block wallet-sensitive tools
+    if (this.blocked && WALLET_SENSITIVE.has(toolName)) {
       return { allowed: false, reason: `Session blocked: ${this.blockReason}` };
     }
 
