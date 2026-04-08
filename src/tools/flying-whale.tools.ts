@@ -37,8 +37,8 @@
  * - flying_whale_risk_score       — 5-factor token risk score (0–100)
  * - flying_whale_wallet_risk      — Wallet trust profile and classification
  *
- * Execution API: https://whale-execution-api-production.up.railway.app
- * Marketplace:   https://flying-whale-marketplace-production.up.railway.app
+ * Execution API: https://exec.flyingwhale.io
+ * Marketplace:   https://flyingwhale.io
  * Buy WHALE:     https://app.bitflow.finance — WHALE/wSTX Pool #42
  */
 
@@ -46,7 +46,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createJsonResponse, createErrorResponse } from "../utils/index.js";
 
-const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
+const BASE_URL  = "https://flyingwhale.io";
 const TIMEOUT_MS = 15_000;
 
 // ─── WHALE Gate Configuration ─────────────────────────────────────────────────
@@ -443,7 +443,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "(COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
         "Returns trend data, skill performance metrics, WHALE pool analytics, and on-chain insights. " +
         "WHALE gate enforced — Agent tier (1,000 WHALE) required. " +
-        "Execution API: https://whale-execution-api-production.up.railway.app",
+        "Execution API: https://exec.flyingwhale.io",
       inputSchema: {
         callerAddress: z
           .string()
