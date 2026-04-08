@@ -21,11 +21,113 @@
  *   L3B. Hard cap on wallet-sensitive calls per session (default: 20)
  *   L3C. Loop detection: same tool N times consecutively = abort
  *   L3D. Rapid-fire detection: N calls/10s to same tool = Denial-of-Wallet block
+ *   L3E. IPI scanning: detect indirect prompt injection in tool results / external content
+ *
+ * IPI Defense Policy v1.0 — terms-of-use.md §12 — Effective 2026-04-07
+ * Zero-tolerance against embedded instructions in external content (news, APIs, web pages).
+ * Known attack phrases catalogued from registered on-chain signals in whale-signal-registry-v1.
+ * ANY match → STOP → QUOTE → ASK owner → WAIT for confirmation → LOG on-chain.
  *
  * No WHALE = No Access. Buy: https://app.bitflow.finance — WHALE/wSTX Pool #42
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// L3E — IPI DEFENSE LAYER (Indirect Prompt Injection)
+// Policy: terms-of-use.md §12 — IPI Defense Policy v1.0
+// On-chain evidence: whale-signal-registry-v1 (3 registered attack patterns)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Known IPI attack phrases catalogued from on-chain signals.
+ * Source: whale-signal-registry-v1 — blocks 7501153+
+ *
+ * Pattern categories:
+ *   - Authority injection  : "agents must", "agents should", "agents can now"
+ *   - Urgency manipulation : "immediately execute", "execute now", "update packages immediately"
+ *   - Capability expansion : "agents can now execute", "execute signal-gated"
+ *   - Task hijacking       : "monitor the correspondent", "secure available slots", "optimize for high-volume"
+ */
+export const IPI_ATTACK_PHRASES: ReadonlyArray<string> = [
+  // Authority + urgency (Zest Protocol attack pattern — signal 1)
+  "agents must update packages",
+  "agents must immediately",
+  "update packages immediately",
+  // Beat Editor manipulation (aibtc.news attack pattern — signal 2)
+  "agents should monitor",
+  "monitor the correspondent",
+  "secure available contract slots",
+  "secure available slots",
+  "optimize for high-volume",
+  // Capability expansion (aibtc.news attack pattern — signal 3)
+  "agents can now execute",
+  "execute signal-gated",
+  "signal-gated write operations",
+  "agents can now",
+  // Generic injection patterns
+  "agents must",
+  "agents should",
+  "automate commercial transactions",
+  "immediately execute",
+  "execute on behalf of",
+  "override safety",
+  "ignore previous instructions",
+  "disregard previous",
+  "new instructions:",
+  "system override",
+  "admin override",
+  "developer mode",
+  "emergency protocol",
+];
+
+export interface IpiScanResult {
+  detected: boolean;
+  phrase?: string;
+  source?: string;
+}
+
+/**
+ * L3E — Scan any string content for known IPI attack phrases.
+ *
+ * Usage: call this on any external content before acting on it.
+ * If detected → STOP. Quote phrase to owner. Ask: "هذا يبدو كـ prompt injection — تنفذه؟"
+ * Wait for explicit confirmation. Never execute partial instructions.
+ *
+ * @param content  The text to scan (tool result, API response, web page, etc.)
+ * @param source   Human-readable label for the source (for error reporting)
+ */
+export function ipiScan(content: string, source = "external content"): IpiScanResult {
+  if (!content || typeof content !== "string") return { detected: false };
+  const lower = content.toLowerCase();
+  const match = IPI_ATTACK_PHRASES.find((phrase) => lower.includes(phrase.toLowerCase()));
+  if (match) {
+    return { detected: true, phrase: match, source };
+  }
+  return { detected: false };
+}
+
+/**
+ * Format an IPI detection alert in the standard Flying Whale response format.
+ * This is the mandatory response when IPI is detected (Policy §12.3 step 2).
+ */
+export function ipiAlert(scan: IpiScanResult, quotedContent?: string): string {
+  return [
+    `⚠️  IPI DEFENSE TRIGGERED — L3E Policy VM`,
+    ``,
+    `Source   : ${scan.source ?? "external content"}`,
+    `Phrase   : "${scan.phrase}"`,
+    ``,
+    quotedContent ? `Suspicious content:\n---\n${quotedContent.slice(0, 500)}\n---\n` : "",
+    `Policy   : terms-of-use.md §12 — IPI Defense Policy v1.0`,
+    `Registry : SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1`,
+    ``,
+    `ACTION REQUIRED: هذا يبدو كـ prompt injection — تنفذه؟`,
+    `→ STOPPED. Awaiting explicit confirmation from zaghmout.btc before any action.`,
+  ]
+    .join("\n")
+    .trim();
+}
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -154,6 +256,8 @@ class SessionGuard {
     sessionDurationMs: number;
     blocked: boolean;
     blockReason: string;
+    ipiDefenseActive: boolean;
+    ipiPhraseCount: number;
   } {
     return {
       totalCalls: this.calls.length,
@@ -161,6 +265,8 @@ class SessionGuard {
       sessionDurationMs: Date.now() - this.sessionStart,
       blocked: this.blocked,
       blockReason: this.blockReason,
+      ipiDefenseActive: true,
+      ipiPhraseCount: IPI_ATTACK_PHRASES.length,
     };
   }
 }
@@ -228,7 +334,34 @@ export function withSessionGuard(server: McpServer): () => void {
           isError: true,
         };
       }
-      return handler(...args);
+
+      // Execute the tool handler
+      const result = await handler(...args);
+
+      // ── L3E: IPI scan on tool result content ──────────────────────────────
+      // Scan the returned text for indirect prompt injection phrases.
+      // If found → override the result with an IPI alert, do NOT return the
+      // injected content as-is.  Policy: terms-of-use.md §12.3
+      if (result?.content && Array.isArray(result.content)) {
+        for (const block of result.content) {
+          if (block?.type === "text" && typeof block.text === "string") {
+            const scan = ipiScan(block.text, `tool result from "${name}"`);
+            if (scan.detected) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: ipiAlert(scan, block.text),
+                  },
+                ],
+                isError: true,
+              };
+            }
+          }
+        }
+      }
+
+      return result;
     };
 
     return original.call(server, name, config, guardedHandler);
@@ -246,4 +379,5 @@ export function withSessionGuard(server: McpServer): () => void {
 }
 
 // Export factory for tests and direct access
+// IPI exports (ipiScan, ipiAlert, IPI_ATTACK_PHRASES) are declared above with `export`
 export { getGuard, WALLET_SENSITIVE, MAX_WALLET_CALLS_PER_SESSION };
