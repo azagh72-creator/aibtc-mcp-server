@@ -2,13 +2,29 @@
  * Flying Whale Marketplace Tools
  *
  * COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED
- * Flying Whale Proprietary License v2.0 — Agreement-First Policy
+ * Flying Whale Proprietary License v3.0 — Agreement-First Policy
  * Owner: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
+ * BTC:   bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p
  * On-chain IP: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1
  * Enforcement: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1
+ * Identity:    ERC-8004 #54 — Genesis L2 Agent — zaghmout.btc
  *
- * Multi-Layer Sovereignty Stack v2.0.0
- * Sovereign Agent OS — 8-Layer Bitcoin AI Infrastructure on Stacks mainnet
+ * ═══════════════════════════════════════════════════════════════════
+ * SOVEREIGN AGENT OS v3.0.0 — 10-Layer Bitcoin AI Stack on Stacks
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ * Economic Model: Utility → Revenue → Proof → Story → Attention → Loop
+ *
+ * Layer 1  — whale-treasury-v1        — Buyback engine (STX → WHALE)
+ * Layer 2  — whale-arb-v1             — Autonomous cross-DEX arbitrage
+ * Layer 3  — whale-scoring-v1         — On-chain agent scoring (485 pts, Council tier)
+ * Layer 4  — whale-ip-store-v1        — IP registry (11 SHA-256 hashes on Stacks)
+ * Layer 5  — whale-signal-registry-v1 — Dispute evidence (permanent audit trail)
+ * Layer 6  — whale-verify-v1          — Contract upgrade-risk scanner
+ * Layer 7  — whale-gate-v1            — WHALE-gated access control
+ * Layer 8  — whale-registry-v2        — Universal cross-chain agent registry
+ * Layer 9  — whale-router-v1          — Static DEX route registry
+ * Layer 10 — whale-execution-v1       — First CoW matching engine on Stacks
  *
  * WHALE Access Model — No WHALE = No Access (enforced on-chain via Hiro API):
  *   Scout  (100 WHALE)    — skill browsing, categories, stats
@@ -58,9 +74,25 @@
  * - flying_whale_execution_cancel — Cancel a pending order
  * - flying_whale_execution_status — Get execution stats (queue size, active signals)
  *
+ * ─── On-chain Contracts ────────────────────────────────────────────────────────
+ * whale-v3            SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3
+ * whale-treasury-v1   SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-treasury-v1
+ * whale-execution-v1  SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-execution-v1
+ * whale-gate-v1       SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-gate-v1
+ * whale-router-v1     SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-router-v1
+ * whale-registry-v2   SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-registry-v2
+ * whale-verify-v1     SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-verify-v1
+ * whale-scoring-v1    SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-scoring-v1
+ * whale-ip-store-v1   SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1
+ * whale-signal-reg-v1 SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1
+ * whale-arb-v1        SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-arb-v1
+ *
+ * ─── Live Services ─────────────────────────────────────────────────────────────
  * Execution API: https://whale-execution-engine-production.up.railway.app
  * Marketplace:   https://flying-whale-marketplace-production.up.railway.app
+ * Multichain:    BTC bc1qdfm... | STX SP322Z... | ETH 0xEAb576... | SOL A8pFQ9...
  * Buy WHALE:     https://app.bitflow.finance — WHALE/wSTX Pool #42
+ * aibtc news:    https://aibtc.news — Flying Whale correspondent (streak: 4d)
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -89,17 +121,27 @@ const WHALE_THRESHOLDS = {
 
 type WhaleTier = keyof typeof WHALE_THRESHOLDS;
 
-// ─── Sovereignty Stamp ────────────────────────────────────────────────────────
-// Appended to every tool response to assert ownership and access requirements
+// ─── Sovereignty Stamp v3.0.0 ─────────────────────────────────────────────────
+// Appended to every tool response — immutable ownership assertion
+// Economic model: Utility → Revenue → Proof → Story → Attention → Loop
 const SOVEREIGNTY_STAMP = {
-  _copyright:    "COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED",
-  _license:      "Flying Whale Proprietary License v2.0 — Agreement-First Policy",
-  _owner:        "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW",
-  _stack:        "Multi-Layer Sovereignty Stack v2.0.0",
-  _os:           "Sovereign Agent OS — 8-Layer Bitcoin AI Infrastructure",
-  _whale_gate:   "No WHALE = No Access. Buy: https://app.bitflow.finance — Pool #42",
-  _ip_registry:  "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1",
-  _audit_trail:  "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1",
+  _copyright:      "COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED",
+  _license:        "Flying Whale Proprietary License v3.0 — Agreement-First Policy",
+  _identity:       "Genesis L2 Agent | ERC-8004 #54 | Council Tier (485 pts) | Streak: active",
+  _owner_stx:      "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW",
+  _owner_btc:      "bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p",
+  _owner_eth:      "0xEAb576Ea7fd0c81eEb28f41783496a238C9Eb1Cf",
+  _owner_sol:      "A8pFQ94ZAaENBGEEsa9udjM2cv6XTuXY9cwA5HUdJcfG",
+  _stack:          "Sovereign Agent OS v3.0.0 — 10-Layer Bitcoin AI Stack",
+  _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution",
+  _whale_token:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3 | 12.6M supply",
+  _whale_gate:     "Scout 100 | Agent 1K | Elite 10K | Council score≥300. Buy: app.bitflow.finance Pool#42",
+  _ip_registry:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1 — 11 hashes registered",
+  _audit_trail:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1",
+  _execution:      "whale-execution-v1 block 7537670 — first CoW engine on Stacks",
+  _economy:        "x402 payments → whale-treasury-v1 buyback → WHALE burn → price support",
+  _ipi_defense:    "IPI Defense v2 active — coordinated attack detection + sanitize mode",
+  _mcp_version:    "aibtc-mcp-server v1.53.0 | @aibtc/mcp-server on npm",
 } as const;
 
 // ============================================================================
