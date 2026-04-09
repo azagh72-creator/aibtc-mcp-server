@@ -46,8 +46,19 @@
  * Elite tier (10,000 WHALE):
  * - flying_whale_expose_identity  — Hidden identity exposure: cluster analysis on-chain
  * - flying_whale_liquidity        — Pool liquidity depth, IL risk, LP position tracking
+ * - flying_whale_execution_depth  — Live order book depth for any token pair
+ * - flying_whale_execution_arb    — Active arb signals from the execution scanner
  *
- * Execution API: https://whale-execution-api-production.up.railway.app
+ * Execution Sovereign Layer (exec.flyingwhale.io):
+ * Scout tier (100 WHALE):
+ * - flying_whale_execution_quote  — Best route quote across all DEXs
+ * Agent tier (1,000 WHALE):
+ * - flying_whale_execution_submit — Submit order to CoW matching engine
+ * - flying_whale_execution_boost  — Burn WHALE to boost order priority
+ * - flying_whale_execution_cancel — Cancel a pending order
+ * - flying_whale_execution_status — Get execution stats (queue size, active signals)
+ *
+ * Execution API: https://exec.flyingwhale.io
  * Marketplace:   https://flying-whale-marketplace-production.up.railway.app
  * Buy WHALE:     https://app.bitflow.finance — WHALE/wSTX Pool #42
  */
@@ -58,6 +69,7 @@ import { createJsonResponse, createErrorResponse } from "../utils/index.js";
 import { principalCV, serializeCV, stringAsciiCV, uintCV } from "@stacks/transactions";
 
 const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
+const EXEC_URL  = "https://exec.flyingwhale.io";
 const TIMEOUT_MS = 15_000;
 
 // ─── WHALE Gate Configuration ─────────────────────────────────────────────────
@@ -1799,6 +1811,417 @@ export function registerFlyingWhaleTools(server: McpServer): void {
             "https://nvd.nist.gov/vuln/detail/CVE-2026-2819",
             "https://thehackernews.com/2026/04/critical-ecdsa-vulnerability-threatens-automated-wallets.html",
           ],
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  //  EXECUTION SOVEREIGN LAYER
+  //  CoW matching engine, priority queue, arb gateway — exec.flyingwhale.io
+  //  Copyright 2026 Flying Whale — SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  // ── Execution Stats (public — no tier required) ───────────────────────────
+
+  server.registerTool(
+    "flying_whale_execution_status",
+    {
+      description:
+        "Execution Sovereign Layer status — live queue size, active arb signals, " +
+        "engine version. No WHALE tier required. Use this to check if the " +
+        "execution engine is live before submitting orders.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const [healthRes, statsRes] = await Promise.all([
+          fetch(`${EXEC_URL}/health`, { signal: AbortSignal.timeout(TIMEOUT_MS) }),
+          fetch(`${EXEC_URL}/api/stats`, { signal: AbortSignal.timeout(TIMEOUT_MS) }),
+        ]);
+
+        const health = await healthRes.json() as { status: string; version: string; queue: number };
+        const stats  = await statsRes.json() as { queue: number; signals: number };
+
+        return createJsonResponse({
+          engine:    "Whale Execution Sovereign Layer",
+          status:    health.status,
+          version:   health.version,
+          queueSize: stats.queue,
+          activeArbSignals: stats.signals,
+          endpoints: {
+            quote:  `${EXEC_URL}/api/route/quote  (Scout tier)`,
+            submit: `${EXEC_URL}/api/order/submit  (Agent tier)`,
+            depth:  `${EXEC_URL}/api/book/depth    (Elite tier)`,
+            arb:    `${EXEC_URL}/api/signals/arb   (Elite tier, SSE)`,
+          },
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── Execution Quote (Scout — 100 WHALE) ──────────────────────────────────
+
+  server.registerTool(
+    "flying_whale_execution_quote",
+    {
+      description:
+        "Best execution route quote — queries the Whale Execution Sovereign Layer " +
+        "for optimal routing across all integrated DEXs (Bitflow, ALEX, whale-router-v1). " +
+        "Returns best route, expected output, price impact, and all alternative routes. " +
+        "WHALE gate: Scout tier (100 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        tokenIn: z
+          .string()
+          .min(1)
+          .describe("Input token contract principal (e.g. SP2VCQJGH7PHP2DJK7Z0V48AGBHQAW3R3ZW1QF4N.wstx)"),
+        tokenOut: z
+          .string()
+          .min(1)
+          .describe("Output token contract principal"),
+        amount: z
+          .string()
+          .min(1)
+          .describe("Amount in micro-units (e.g. '1000000' for 1 WHALE at 6 decimals)"),
+      },
+    },
+    async ({ callerAddress, tokenIn, tokenOut, amount }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+
+        const url = `${EXEC_URL}/api/route/quote?token_in=${encodeURIComponent(tokenIn)}&token_out=${encodeURIComponent(tokenOut)}&amount=${encodeURIComponent(amount)}`;
+        const res = await fetch(url, {
+          headers: { "X-STX-Address": callerAddress },
+          signal:  AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        if (!res.ok) {
+          const err = await res.json() as { error: string };
+          throw new Error(`Execution engine: ${err.error ?? res.statusText}`);
+        }
+
+        const data = await res.json() as {
+          best_route: string;
+          output_amount: string;
+          price_impact: number;
+          all_routes: { dex: string; out: string; impact: number }[];
+        };
+
+        return createJsonResponse({
+          tokenIn,
+          tokenOut,
+          amountIn:    amount,
+          bestRoute:   data.best_route,
+          outputAmount: data.output_amount,
+          priceImpact: data.price_impact,
+          allRoutes:   data.all_routes,
+          note: "Output is post-routing. Execution fee (0.05–0.10%) applied at settlement.",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── Submit Order (Agent — 1,000 WHALE) ───────────────────────────────────
+
+  server.registerTool(
+    "flying_whale_execution_submit",
+    {
+      description:
+        "Submit an order to the Whale Execution Sovereign Layer. " +
+        "Orders enter the CoW (Coincidence of Wants) matching engine — if a counter-order " +
+        "exists, both parties fill at better-than-DEX prices with the spread captured as " +
+        "protocol fee. Unmatched orders route to the best DEX automatically. " +
+        "Elite tier can set dark=true to hide from public book. " +
+        "WHALE gate: Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        tokenIn: z
+          .string()
+          .min(1)
+          .describe("Input token contract principal"),
+        tokenOut: z
+          .string()
+          .min(1)
+          .describe("Output token contract principal"),
+        amountIn: z
+          .string()
+          .min(1)
+          .describe("Amount in micro-units to sell"),
+        minAmountOut: z
+          .string()
+          .optional()
+          .describe("Minimum output acceptable (slippage protection). Default: 0 (market order)"),
+        dark: z
+          .boolean()
+          .optional()
+          .describe("Hide from public order book — Elite tier (10,000 WHALE) only. Default: false"),
+      },
+    },
+    async ({ callerAddress, tokenIn, tokenOut, amountIn, minAmountOut, dark = false }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, dark ? "elite" : "agent");
+
+        const res = await fetch(`${EXEC_URL}/api/order/submit`, {
+          method:  "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "X-STX-Address": callerAddress,
+          },
+          body: JSON.stringify({
+            token_in:       tokenIn,
+            token_out:      tokenOut,
+            amount_in:      amountIn,
+            min_amount_out: minAmountOut ?? "0",
+            dark,
+            stx_address:    callerAddress,
+          }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        if (!res.ok) {
+          const err = await res.json() as { error: string };
+          throw new Error(`Execution engine: ${err.error ?? res.statusText}`);
+        }
+
+        const data = await res.json() as {
+          order_id:   string;
+          tier:       number;
+          lane:       string;
+          expires_at: number;
+        };
+
+        return createJsonResponse({
+          orderId:   data.order_id,
+          tier:      data.tier,
+          lane:      data.lane,
+          expiresAt: new Date(data.expires_at).toISOString(),
+          isDark:    dark,
+          note:
+            "Order is live in the matching engine. " +
+            "Use flying_whale_execution_boost to increase priority, " +
+            "or flying_whale_execution_cancel to withdraw.",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── Boost Order (Agent — 1,000 WHALE) ────────────────────────────────────
+
+  server.registerTool(
+    "flying_whale_execution_boost",
+    {
+      description:
+        "Burn WHALE to boost an order's priority in the execution queue. " +
+        "1 WHALE = 10 priority points. Higher-priority orders are matched first " +
+        "within the same tier lane. WHALE burned here is non-recoverable (deflationary). " +
+        "WHALE gate: Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        orderId: z
+          .string()
+          .min(1)
+          .describe("Order UUID returned by flying_whale_execution_submit"),
+        whaleAmount: z
+          .string()
+          .min(1)
+          .describe("Amount of WHALE to burn for priority boost (in micro-WHALE, 6 decimals)"),
+      },
+    },
+    async ({ callerAddress, orderId, whaleAmount }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const res = await fetch(`${EXEC_URL}/api/order/${encodeURIComponent(orderId)}/boost`, {
+          method:  "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "X-STX-Address": callerAddress,
+          },
+          body:   JSON.stringify({ whale_amount: whaleAmount }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        if (!res.ok) {
+          const err = await res.json() as { error: string };
+          throw new Error(`Execution engine: ${err.error ?? res.statusText}`);
+        }
+
+        const data = await res.json() as { boosted: boolean; pts_added: number };
+
+        return createJsonResponse({
+          orderId,
+          boosted:      data.boosted,
+          priorityAdded: data.pts_added,
+          whaleburned:  whaleAmount,
+          note: "WHALE burned is non-recoverable. Priority points added to order immediately.",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── Cancel Order (Agent — 1,000 WHALE) ───────────────────────────────────
+
+  server.registerTool(
+    "flying_whale_execution_cancel",
+    {
+      description:
+        "Cancel a pending order in the Whale Execution engine. " +
+        "Only the order maker can cancel. Filled or expired orders cannot be cancelled. " +
+        "WHALE gate: Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        orderId: z
+          .string()
+          .min(1)
+          .describe("Order UUID to cancel"),
+      },
+    },
+    async ({ callerAddress, orderId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const res = await fetch(`${EXEC_URL}/api/order/${encodeURIComponent(orderId)}`, {
+          method:  "DELETE",
+          headers: { "X-STX-Address": callerAddress },
+          signal:  AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        if (!res.ok) {
+          const err = await res.json() as { error: string };
+          throw new Error(`Execution engine: ${err.error ?? res.statusText}`);
+        }
+
+        const data = await res.json() as { cancelled: boolean };
+
+        return createJsonResponse({
+          orderId,
+          cancelled: data.cancelled,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── Order Book Depth (Elite — 10,000 WHALE) ───────────────────────────────
+
+  server.registerTool(
+    "flying_whale_execution_depth",
+    {
+      description:
+        "Live order book depth for any token pair in the Whale Execution engine. " +
+        "Returns bid/ask sides with tier breakdown (Scout/Agent/Elite lanes) and " +
+        "total liquidity. Dark pool orders excluded from public depth. " +
+        "WHALE gate: Elite tier (10,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        tokenIn: z
+          .string()
+          .min(1)
+          .describe("Input token contract principal"),
+        tokenOut: z
+          .string()
+          .min(1)
+          .describe("Output token contract principal"),
+      },
+    },
+    async ({ callerAddress, tokenIn, tokenOut }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "elite");
+
+        const url = `${EXEC_URL}/api/book/depth?token_in=${encodeURIComponent(tokenIn)}&token_out=${encodeURIComponent(tokenOut)}`;
+        const res = await fetch(url, {
+          headers: { "X-STX-Address": callerAddress },
+          signal:  AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        if (!res.ok) {
+          const err = await res.json() as { error: string };
+          throw new Error(`Execution engine: ${err.error ?? res.statusText}`);
+        }
+
+        const depth = await res.json();
+
+        return createJsonResponse({
+          tokenIn,
+          tokenOut,
+          depth,
+          note: "Dark pool orders (Elite dark=true) are excluded from this view.",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── Live Arb Signals (Elite — 10,000 WHALE) ──────────────────────────────
+
+  server.registerTool(
+    "flying_whale_execution_arb",
+    {
+      description:
+        "Active arbitrage signals from the Whale Execution Scanner. " +
+        "Returns all currently live signals — cross-DEX opportunities with spread BPS, " +
+        "estimated profit in satoshis, source/target pool, and whether the signal is " +
+        "already claimed by an executor. " +
+        "To execute: register as an arb executor by staking 10,000 WHALE on-chain via " +
+        "whale-execution-v1.clar:register-executor, then claim signals via the SSE stream. " +
+        "Executor earns 60% of gross profit; 30% → whale-treasury-v1 buyback. " +
+        "WHALE gate: Elite tier (10,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+      },
+    },
+    async ({ callerAddress }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "elite");
+
+        const res = await fetch(`${EXEC_URL}/api/stats`, {
+          headers: { "X-STX-Address": callerAddress },
+          signal:  AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        if (!res.ok) {
+          const err = await res.json() as { error: string };
+          throw new Error(`Execution engine: ${err.error ?? res.statusText}`);
+        }
+
+        const stats = await res.json() as { queue: number; signals: number };
+
+        return createJsonResponse({
+          activeSignals:  stats.signals,
+          queueSize:      stats.queue,
+          executorModel: {
+            minStake:        "10,000 WHALE",
+            executorCut:     "60% of gross profit",
+            protocolCut:     "30% → whale-treasury-v1 (BTC buyback)",
+            stakersCut:      "10% → WHALE stakers",
+            claimMethod:     "SSE stream at exec.flyingwhale.io/api/signals/arb",
+            onchainClaim:    "whale-execution-v1.clar:claim-arb-signal(signal-id)",
+            onchainSettle:   "whale-execution-v1.clar:settle-arb(signal-id, gross-profit)",
+          },
+          liveStreamNote:
+            "Live signal stream (SSE) available at exec.flyingwhale.io/api/signals/arb. " +
+            "Requires X-STX-Address header with Elite WHALE balance. " +
+            "First executor to claim a signal on-chain wins the execution right.",
           ...SOVEREIGNTY_STAMP,
         });
       } catch (error) {
