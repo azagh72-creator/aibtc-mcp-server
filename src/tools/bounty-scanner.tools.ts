@@ -302,60 +302,56 @@ Fields:
       },
     },
     async ({ title, description, amount_sats, tags, deadline }) => {
-      try {
-        const account = await getAccount();
+      const account = await getAccount();
 
-        if (!account.btcAddress || !account.btcPrivateKey || !account.btcPublicKey) {
-          throw new Error(
-            "Bitcoin keys not available. Unlock a wallet with BTC key derivation to create bounties."
-          );
-        }
-
-        const authHeaders = buildBountyAuthHeaders("create-bounty", "bounties", account as AccountForAuth);
-
-        const payload: Record<string, unknown> = {
-          title,
-          description,
-          amount_sats,
-          btc_address: account.btcAddress,
-        };
-        if (account.address) {
-          payload.stx_address = account.address;
-        }
-        if (tags) {
-          payload.tags = tags;
-        }
-        if (deadline) {
-          payload.deadline = deadline;
-        }
-
-        const res = await fetch(`${BOUNTY_BASE}/bounties`, {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify(payload),
-        });
-
-        const responseText = await res.text();
-        let responseData: unknown;
-        try {
-          responseData = JSON.parse(responseText);
-        } catch {
-          responseData = { raw: responseText };
-        }
-
-        if (!res.ok) {
-          throw new Error(`Failed to create bounty (${res.status}): ${responseText}`);
-        }
-
-        return createJsonResponse({
-          success: true,
-          message: "Bounty created successfully",
-          bounty: responseData,
-          created_by: account.btcAddress,
-        });
-      } catch (error) {
-        return createErrorResponse(error);
+      if (!account.btcAddress || !account.btcPrivateKey || !account.btcPublicKey) {
+        throw new Error(
+          "Bitcoin keys not available. Unlock a wallet with BTC key derivation to create bounties."
+        );
       }
+
+      const authHeaders = buildBountyAuthHeaders("create-bounty", "bounties", account as AccountForAuth);
+
+      const payload: Record<string, unknown> = {
+        title,
+        description,
+        amount_sats,
+        btc_address: account.btcAddress,
+      };
+      if (account.address) {
+        payload.stx_address = account.address;
+      }
+      if (tags) {
+        payload.tags = tags;
+      }
+      if (deadline) {
+        payload.deadline = deadline;
+      }
+
+      const res = await fetch(`${BOUNTY_BASE}/bounties`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify(payload),
+      });
+
+      const responseText = await res.text();
+      let responseData: unknown;
+      try {
+        responseData = JSON.parse(responseText);
+      } catch {
+        responseData = { raw: responseText };
+      }
+
+      if (!res.ok) {
+        throw new Error(`Failed to create bounty (${res.status}): ${responseText}`);
+      }
+
+      return createJsonResponse({
+        success: true,
+        message: "Bounty created successfully",
+        bounty: responseData,
+        created_by: account.btcAddress,
+      });
     }
   );
 
