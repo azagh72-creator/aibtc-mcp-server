@@ -1,11 +1,12 @@
 {
-  "name": "@aibtc/mcp-server",
-  "version": "1.47.0",
-  "description": "Bitcoin-native MCP server for AI agents: BTC/STX wallets, DeFi yield, sBTC peg, NFTs, and x402 payments.",
-  "mcpName": "io.github.aibtcdev/mcp-server",
+  "name": "flying-whale-mcp-server",
+  "version": "1.49.0",
+  "description": "Flying Whale Sovereign Agent OS — Bitcoin-native MCP server: WHALE-gated tools, BTC/STX wallets, DeFi yield, sBTC peg, NFTs, x402 payments.",
+  "mcpName": "io.flyingwhale/mcp-server",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "flying-whale-mcp-server": "./dist/index.js",
     "aibtc-mcp-server": "./dist/index.js"
   },
   "scripts": {
@@ -38,9 +39,9 @@
   "author": "aibtcdev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aibtcdev/aibtc-mcp-server.git"
+    "url": "https://github.com/azagh72-creator/aibtc-mcp-server.git"
   },
-  "homepage": "https://github.com/aibtcdev/aibtc-mcp-server#readme",
+  "homepage": "https://github.com/azagh72-creator/aibtc-mcp-server#readme",
   "license": "MIT",
   "dependencies": {
     "@aibtc/tx-schemas": "^0.3.0",

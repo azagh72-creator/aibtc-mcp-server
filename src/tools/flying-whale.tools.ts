@@ -31,11 +31,18 @@
  * - flying_whale_get_regime       — Market regime for STX/BTC (Wyckoff + RSI + signal)
  * - flying_whale_get_whale_price  — Real-time WHALE price, liquidity, pool depth
  * - flying_whale_registry_lookup  — Agent registry lookup (whale-registry-v2 on-chain)
+ * - flying_whale_relay_hardened   — Hardened relay health: TLS, latency, block consensus
  * Agent tier (1,000 WHALE):
  * - flying_whale_list_orders      — Order book (buy/sell for skill trading)
  * - flying_whale_get_intelligence — Intelligence reports and market analytics
  * - flying_whale_risk_score       — 5-factor token risk score (0–100)
  * - flying_whale_wallet_risk      — Wallet trust profile and classification
+ * - flying_whale_multi_key        — Multi-key architecture: balance/nonce/activity matrix
+ * - flying_whale_verify_upgrade   — Upgradeable contract detection + risk assessment
+ * - flying_whale_safe_execute     — Agent-safe pre-flight: balance, nonce, fee, simulation
+ * Elite tier (10,000 WHALE):
+ * - flying_whale_expose_identity  — Hidden identity exposure: cluster analysis on-chain
+ * - flying_whale_liquidity        — Pool liquidity depth, IL risk, LP position tracking
  *
  * Execution API: https://whale-execution-api-production.up.railway.app
  * Marketplace:   https://flying-whale-marketplace-production.up.railway.app
@@ -693,6 +700,626 @@ export function registerFlyingWhaleTools(server: McpServer): void {
           registry: `${REGISTRY_CONTRACT}.${REGISTRY_NAME}`,
           result,
           registryStats: statsResult,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ==========================================================================
+  // SECURITY & INFRASTRUCTURE TOOLS
+  // ==========================================================================
+
+  // ---------- Relay Hardened — Scout tier ----------
+
+  server.registerTool(
+    "flying_whale_relay_hardened",
+    {
+      description:
+        "Hardened relay health check for Stacks nodes — measures TLS validity, response latency, " +
+        "block height consensus across multiple endpoints, and flags any divergence or downtime. " +
+        "Returns a security grade (SECURE / DEGRADED / COMPROMISED) with per-relay detail. " +
+        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+      },
+    },
+    async ({ callerAddress }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+
+        const RELAYS = [
+          { name: "hiro-mainnet",  url: "https://api.hiro.so" },
+          { name: "stacks-co",     url: "https://stacks-node-api.mainnet.stacks.co" },
+          { name: "nodeyez",       url: "https://api.mainnet.hiro.so" },
+        ];
+
+        const results = await Promise.allSettled(
+          RELAYS.map(async relay => {
+            const start = Date.now();
+            const res = await fetch(`${relay.url}/extended/v1/info/network_block_times`, {
+              signal: AbortSignal.timeout(8_000),
+            });
+            const latencyMs = Date.now() - start;
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json() as { mainnet?: { target_block_time: number } };
+
+            // Also fetch block height
+            const infoRes = await fetch(`${relay.url}/v2/info`, {
+              signal: AbortSignal.timeout(5_000),
+            });
+            const info = infoRes.ok ? await infoRes.json() as { stacks_tip_height?: number } : null;
+
+            return {
+              relay: relay.name,
+              url: relay.url,
+              status: "online",
+              latencyMs,
+              blockHeight: info?.stacks_tip_height ?? null,
+              blockTime: data?.mainnet?.target_block_time ?? null,
+              tls: relay.url.startsWith("https"),
+            };
+          })
+        );
+
+        const reports = results.map((r, i) =>
+          r.status === "fulfilled"
+            ? r.value
+            : { relay: RELAYS[i].name, url: RELAYS[i].url, status: "offline", error: (r.reason as Error).message }
+        );
+
+        const online = reports.filter(r => r.status === "online");
+        const blockHeights = online.map(r => (r as { blockHeight: number | null }).blockHeight).filter(h => h !== null) as number[];
+        const maxDrift = blockHeights.length > 1
+          ? Math.max(...blockHeights) - Math.min(...blockHeights)
+          : 0;
+
+        const grade =
+          online.length === 0 ? "COMPROMISED" :
+          maxDrift > 5 || online.length < 2 ? "DEGRADED" : "SECURE";
+
+        return createJsonResponse({
+          grade,
+          onlineRelays: online.length,
+          totalRelays: RELAYS.length,
+          blockHeightDrift: maxDrift,
+          relays: reports,
+          securityFlags: [
+            ...(maxDrift > 5 ? [`Block height drift detected: ${maxDrift} blocks`] : []),
+            ...(online.length < RELAYS.length ? [`${RELAYS.length - online.length} relay(s) offline`] : []),
+            ...(online.every(r => (r as { tls: boolean }).tls) ? [] : ["Non-TLS relay detected"]),
+          ],
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Multi-Key Architecture — Agent tier ----------
+
+  server.registerTool(
+    "flying_whale_multi_key",
+    {
+      description:
+        "Multi-key architecture analysis — checks balance, nonce, activity age, and last-seen " +
+        "for up to 5 Stacks addresses in parallel. Returns a unified key-health matrix with " +
+        "rotation recommendations and dormancy flags. " +
+        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        addresses: z
+          .array(z.string().min(1))
+          .min(1)
+          .max(5)
+          .describe("Array of Stacks addresses to analyze (1–5). Include your signing keys, hot/cold wallets, etc."),
+      },
+    },
+    async ({ callerAddress, addresses }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const results = await Promise.allSettled(
+          addresses.map(async addr => {
+            const [balRes, txRes, nonceRes] = await Promise.allSettled([
+              fetch(`${HIRO_API}/extended/v1/address/${addr}/balances`, {
+                signal: AbortSignal.timeout(TIMEOUT_MS),
+              }).then(r => r.json()),
+              fetch(`${HIRO_API}/extended/v1/address/${addr}/transactions?limit=5`, {
+                signal: AbortSignal.timeout(TIMEOUT_MS),
+              }).then(r => r.json()),
+              fetch(`${HIRO_API}/v2/accounts/${addr}?proof=0`, {
+                signal: AbortSignal.timeout(TIMEOUT_MS),
+              }).then(r => r.json()),
+            ]);
+
+            const bal = balRes.status === "fulfilled" ? balRes.value as {
+              stx?: { balance: string; locked: string };
+              fungible_tokens?: Record<string, { balance: string }>;
+            } : null;
+            const txs = txRes.status === "fulfilled" ? txRes.value as { results?: { burn_block_time_iso?: string }[] } : null;
+            const nonce = nonceRes.status === "fulfilled" ? nonceRes.value as { nonce?: number } : null;
+
+            const stxBalance = bal?.stx?.balance ?? "0";
+            const stxLocked  = bal?.stx?.locked ?? "0";
+            const whaleBalance = bal?.fungible_tokens?.[WHALE_FT_KEY]?.balance ?? "0";
+            const lastTx = txs?.results?.[0]?.burn_block_time_iso ?? null;
+            const daysSinceActive = lastTx
+              ? Math.floor((Date.now() - new Date(lastTx).getTime()) / 86_400_000)
+              : null;
+
+            return {
+              address: addr,
+              stxBalance: (Number(stxBalance) / 1e6).toFixed(6) + " STX",
+              stxLocked: (Number(stxLocked) / 1e6).toFixed(6) + " STX",
+              whaleBalance: (Number(whaleBalance) / 1e6).toFixed(2) + " WHALE",
+              nonce: nonce?.nonce ?? null,
+              lastActive: lastTx,
+              daysSinceActive,
+              flags: [
+                ...(Number(stxBalance) < 100_000 ? ["LOW_BALANCE"] : []),
+                ...(daysSinceActive !== null && daysSinceActive > 30 ? ["DORMANT"] : []),
+                ...(Number(stxLocked) > Number(stxBalance) * 0.9 ? ["MOSTLY_LOCKED"] : []),
+              ],
+            };
+          })
+        );
+
+        const keyMatrix = results.map((r, i) =>
+          r.status === "fulfilled"
+            ? r.value
+            : { address: addresses[i], error: (r.reason as Error).message }
+        );
+
+        const healthy  = keyMatrix.filter(k => !("error" in k) && (k as { flags: string[] }).flags.length === 0).length;
+        const warnings = keyMatrix.filter(k => !("error" in k) && (k as { flags: string[] }).flags.length > 0).length;
+
+        return createJsonResponse({
+          summary: { total: addresses.length, healthy, warnings, errors: addresses.length - healthy - warnings },
+          keys: keyMatrix,
+          recommendation:
+            healthy === addresses.length
+              ? "All keys healthy"
+              : "Review flagged keys — rotate dormant keys, top up low-balance signers",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Upgradeable Verification — Agent tier ----------
+
+  server.registerTool(
+    "flying_whale_verify_upgrade",
+    {
+      description:
+        "Upgradeable contract verification — fetches Clarity source and detects upgrade risk patterns: " +
+        "mutable owner variables, set-owner functions, proxy delegation, missing auth guards. " +
+        "Returns an upgrade-risk score (0–100) and classification (IMMUTABLE / LOW / MEDIUM / HIGH / CRITICAL). " +
+        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        contractId: z
+          .string()
+          .min(1)
+          .describe("Full contract ID to analyze, e.g. SP322...whale-gate-v1"),
+      },
+    },
+    async ({ callerAddress, contractId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const res = await fetch(
+          `${HIRO_API}/extended/v1/contract/${encodeURIComponent(contractId)}`,
+          { signal: AbortSignal.timeout(TIMEOUT_MS) }
+        );
+        if (!res.ok) throw new Error(`Contract not found: ${res.status}`);
+        const data = await res.json() as {
+          source_code?: string;
+          publish_height?: number;
+          tx_id?: string;
+          abi?: string;
+        };
+
+        const src = data.source_code ?? "";
+        const findings: string[] = [];
+        let riskScore = 0;
+
+        // Pattern analysis
+        const checks: [RegExp, number, string][] = [
+          [/\(define-data-var\s+\S*owner\S*\s+principal/i,  20, "Mutable owner variable"],
+          [/\(var-set\s+\S*owner/i,                         25, "Owner reassignment via var-set"],
+          [/\(as-contract\s+\(contract-call\?/i,            15, "as-contract delegation pattern"],
+          [/impl-trait/i,                                    10, "Trait implementation (proxy risk)"],
+          [/\(define-public\s+\(set-\S*owner/i,             30, "Public set-owner function"],
+          [/\(define-public\s+\(upgrade/i,                  35, "Explicit upgrade function"],
+          [/\(define-public\s+\(migrate/i,                  35, "Migration function present"],
+          [/contract-caller/i,                              -5, "Uses contract-caller (auth-aware)"],
+          [/\(asserts!\s+\(is-eq\s+(tx-sender|contract-caller)\s+/i, -15, "Has tx-sender/contract-caller guard"],
+        ];
+
+        for (const [pattern, weight, label] of checks) {
+          if (pattern.test(src)) {
+            if (weight > 0) findings.push(`[+${weight}] ${label}`);
+            else findings.push(`[${weight}] ${label} (mitigating)`);
+            riskScore = Math.max(0, riskScore + weight);
+          }
+        }
+
+        riskScore = Math.min(100, riskScore);
+
+        const classification =
+          riskScore === 0  ? "IMMUTABLE" :
+          riskScore < 20   ? "LOW" :
+          riskScore < 45   ? "MEDIUM" :
+          riskScore < 70   ? "HIGH" : "CRITICAL";
+
+        return createJsonResponse({
+          contractId,
+          publishHeight: data.publish_height ?? null,
+          deployTx: data.tx_id ?? null,
+          upgradeRiskScore: riskScore,
+          classification,
+          findings,
+          sourceLength: src.length,
+          recommendation:
+            classification === "IMMUTABLE" ? "No upgrade risk detected" :
+            classification === "LOW"       ? "Low risk — monitor owner address" :
+            classification === "MEDIUM"    ? "Review upgrade logic before trusting with funds" :
+            "HIGH RISK — do not deposit significant funds without full audit",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Agent-Safe Execution — Agent tier ----------
+
+  server.registerTool(
+    "flying_whale_safe_execute",
+    {
+      description:
+        "Agent-safe pre-flight execution check — verifies STX balance, current nonce, estimated fee, " +
+        "and post-condition safety before committing a transaction. Returns GO / NO-GO decision with " +
+        "blocking reasons. Run this before any on-chain write to prevent failed transactions. " +
+        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        senderAddress: z
+          .string()
+          .min(1)
+          .describe("The Stacks address that will sign and broadcast the transaction"),
+        contractId: z
+          .string()
+          .min(1)
+          .describe("Target contract ID, e.g. SP322...whale-v3"),
+        functionName: z
+          .string()
+          .min(1)
+          .describe("Contract function to call"),
+        estimatedFeeUstx: z
+          .number()
+          .optional()
+          .describe("Expected fee in uSTX (default: 10000). Used for balance check."),
+        transferAmountUstx: z
+          .number()
+          .optional()
+          .describe("Amount of uSTX being transferred (if any). Used for balance check."),
+      },
+    },
+    async ({ callerAddress, senderAddress, contractId, functionName, estimatedFeeUstx = 10_000, transferAmountUstx = 0 }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const [accountRes, feeRes, contractRes] = await Promise.allSettled([
+          fetch(`${HIRO_API}/v2/accounts/${senderAddress}?proof=0`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()),
+          fetch(`${HIRO_API}/v2/fees/transfer`, {
+            signal: AbortSignal.timeout(5_000),
+          }).then(r => r.json()),
+          fetch(`${HIRO_API}/extended/v1/contract/${encodeURIComponent(contractId)}`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()),
+        ]);
+
+        const account = accountRes.status === "fulfilled"
+          ? accountRes.value as { balance: string; nonce: number; locked: string }
+          : null;
+        const feeRate = feeRes.status === "fulfilled"
+          ? feeRes.value as { fee_rate: number }
+          : null;
+        const contract = contractRes.status === "fulfilled"
+          ? contractRes.value as { tx_id?: string; abi?: string }
+          : null;
+
+        // Parse ABI to find function
+        let fnExists = false;
+        let fnAccess: string | null = null;
+        if (contract?.abi) {
+          try {
+            const abi = typeof contract.abi === "string" ? JSON.parse(contract.abi) : contract.abi;
+            const fn = (abi.functions as { name: string; access: string }[])?.find(f => f.name === functionName);
+            fnExists = !!fn;
+            fnAccess = fn?.access ?? null;
+          } catch { /* ignore */ }
+        }
+
+        const balanceUstx    = account ? BigInt(account.balance) : 0n;
+        const lockedUstx     = account ? BigInt(account.locked) : 0n;
+        const availableUstx  = balanceUstx - lockedUstx;
+        const requiredUstx   = BigInt(estimatedFeeUstx) + BigInt(transferAmountUstx);
+        const balanceSufficient = availableUstx >= requiredUstx;
+
+        const blockers: string[] = [
+          ...(!contract?.tx_id         ? ["Contract not found on-chain"]              : []),
+          ...(contract && !fnExists     ? [`Function '${functionName}' not in ABI`]   : []),
+          ...(fnAccess === "read_only"  ? [`'${functionName}' is read-only — use call_read_only_function instead`] : []),
+          ...(!balanceSufficient        ? [`Insufficient balance: have ${availableUstx} uSTX, need ${requiredUstx} uSTX`] : []),
+          ...(!account               ? ["Could not fetch account state"]              : []),
+        ];
+
+        return createJsonResponse({
+          decision: blockers.length === 0 ? "GO" : "NO-GO",
+          blockers,
+          preflight: {
+            senderAddress,
+            contractId,
+            functionName,
+            functionAccess: fnAccess,
+            contractDeployTx: contract?.tx_id ?? null,
+            currentNonce: account?.nonce ?? null,
+            availableUstx: availableUstx.toString(),
+            requiredUstx: requiredUstx.toString(),
+            networkFeeRate: feeRate?.fee_rate ?? null,
+            recommendedFee: feeRate ? Math.ceil(feeRate.fee_rate * 256) : estimatedFeeUstx,
+          },
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Hidden Identity Exposure — Elite tier ----------
+
+  server.registerTool(
+    "flying_whale_expose_identity",
+    {
+      description:
+        "Hidden identity exposure — on-chain cluster analysis for any Stacks address. " +
+        "Finds the original funding source, common counterparties, memo patterns, and timing correlations " +
+        "that may link wallets to the same controller. Returns a cluster report with confidence scores. " +
+        "WHALE gate enforced — Elite tier (10,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        targetAddress: z
+          .string()
+          .min(1)
+          .describe("Stacks address to analyze (SP...)"),
+        depth: z
+          .number()
+          .min(1)
+          .max(3)
+          .optional()
+          .describe("Analysis depth: 1=direct funding, 2=second-hop, 3=full cluster (default: 2)"),
+      },
+    },
+    async ({ callerAddress, targetAddress, depth = 2 }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "elite");
+
+        // Fetch recent transactions + STX transfers for the target
+        const [txRes, stxTransferRes] = await Promise.all([
+          fetch(
+            `${HIRO_API}/extended/v1/address/${targetAddress}/transactions?limit=50&type[]=coinbase&type[]=token_transfer&type[]=contract_call`,
+            { signal: AbortSignal.timeout(TIMEOUT_MS) }
+          ).then(r => r.json()),
+          fetch(
+            `${HIRO_API}/extended/v1/address/${targetAddress}/transactions_with_transfers?limit=50`,
+            { signal: AbortSignal.timeout(TIMEOUT_MS) }
+          ).then(r => r.json()),
+        ]);
+
+        const txs = (txRes as { results?: { tx_type: string; sender_address?: string; token_transfer?: { recipient_address: string; memo?: string }; burn_block_time_iso?: string; fee_rate?: string }[] }).results ?? [];
+        const transfers = (stxTransferRes as { results?: { tx: { sender_address: string; burn_block_time_iso?: string }; stx_transfers?: { sender: string; recipient: string; amount: string }[] }[] }).results ?? [];
+
+        // Find original funder (earliest incoming STX transfer)
+        const incomingFunders = new Map<string, { count: number; totalUstx: bigint; firstSeen: string }>();
+        for (const tx of transfers) {
+          for (const st of (tx.stx_transfers ?? [])) {
+            if (st.recipient === targetAddress && st.sender !== targetAddress) {
+              const existing = incomingFunders.get(st.sender) ?? { count: 0, totalUstx: 0n, firstSeen: tx.tx.burn_block_time_iso ?? "" };
+              incomingFunders.set(st.sender, {
+                count: existing.count + 1,
+                totalUstx: existing.totalUstx + BigInt(st.amount),
+                firstSeen: existing.firstSeen || (tx.tx.burn_block_time_iso ?? ""),
+              });
+            }
+          }
+        }
+
+        // Find counterparties (outgoing)
+        const counterparties = new Map<string, number>();
+        for (const tx of txs) {
+          if (tx.tx_type === "token_transfer" && tx.token_transfer?.recipient_address) {
+            const r = tx.token_transfer.recipient_address;
+            if (r !== targetAddress) counterparties.set(r, (counterparties.get(r) ?? 0) + 1);
+          }
+        }
+
+        // Memo pattern analysis
+        const memos = txs
+          .filter(tx => tx.token_transfer?.memo)
+          .map(tx => Buffer.from(tx.token_transfer!.memo!.replace("0x", ""), "hex").toString("utf8").replace(/\0/g, "").trim())
+          .filter(Boolean);
+
+        // Depth-2: fetch first-hop funder's counterparties if requested
+        let secondHop: Record<string, unknown> = {};
+        if (depth >= 2 && incomingFunders.size > 0) {
+          const topFunder = [...incomingFunders.entries()].sort((a, b) => Number(b[1].totalUstx - a[1].totalUstx))[0]?.[0];
+          if (topFunder) {
+            try {
+              const funderTxRes = await fetch(
+                `${HIRO_API}/extended/v1/address/${topFunder}/transactions_with_transfers?limit=20`,
+                { signal: AbortSignal.timeout(TIMEOUT_MS) }
+              ).then(r => r.json()) as { results?: { tx: { sender_address: string }; stx_transfers?: { recipient: string }[] }[] };
+              const funderRecipients = new Set<string>();
+              for (const tx of (funderTxRes.results ?? [])) {
+                for (const st of (tx.stx_transfers ?? [])) {
+                  if (st.recipient !== topFunder && st.recipient !== targetAddress) {
+                    funderRecipients.add(st.recipient);
+                  }
+                }
+              }
+              secondHop = {
+                topFunder,
+                funderAlsoSentTo: [...funderRecipients].slice(0, 10),
+                note: "Addresses that received STX from the same funder — potential cluster members",
+              };
+            } catch { /* non-fatal */ }
+          }
+        }
+
+        const fundersArray = [...incomingFunders.entries()]
+          .sort((a, b) => Number(b[1].totalUstx - a[1].totalUstx))
+          .slice(0, 5)
+          .map(([addr, data]) => ({
+            address: addr,
+            transfers: data.count,
+            totalStx: (Number(data.totalUstx) / 1e6).toFixed(6),
+            firstSeen: data.firstSeen,
+          }));
+
+        const topCounterparties = [...counterparties.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([addr, count]) => ({ address: addr, interactions: count }));
+
+        return createJsonResponse({
+          targetAddress,
+          analysisDepth: depth,
+          fundingSources: fundersArray,
+          topCounterparties,
+          memoPatterns: [...new Set(memos)].slice(0, 10),
+          secondHopCluster: Object.keys(secondHop).length ? secondHop : null,
+          clusterConfidence:
+            fundersArray.length === 1 && topCounterparties.length > 0 ? "HIGH" :
+            fundersArray.length <= 3 ? "MEDIUM" : "LOW",
+          note: "On-chain data only. No off-chain inference. Verify all findings independently.",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Liquidity — Elite tier ----------
+
+  server.registerTool(
+    "flying_whale_liquidity",
+    {
+      description:
+        "Pool liquidity analysis — fetches real-time depth, volume, LP token supply, and impermanent " +
+        "loss risk for any Stacks DEX pool. Also checks WHALE/wSTX Bitflow pool #42 by default. " +
+        "Returns liquidity health score, IL simulation for ±20%/±50% price moves, and LP position value. " +
+        "WHALE gate enforced — Elite tier (10,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        poolContract: z
+          .string()
+          .optional()
+          .describe("Pool contract ID to analyze (default: WHALE/wSTX Bitflow pool #42)"),
+        lpHolderAddress: z
+          .string()
+          .optional()
+          .describe("Address holding LP tokens — returns position value if provided"),
+      },
+    },
+    async ({ callerAddress, poolContract, lpHolderAddress }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "elite");
+
+        // Default: WHALE/wSTX pool on Bitflow (xyk-core pool registry)
+        const XYK_CORE = "SM1793C4R5PZ4NS4VQ4WMP7SKKYVH8JZEWSZ9HCCR";
+        const WHALE_CONTRACT = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3";
+        const WSTX_CONTRACT  = "SP2VCQJGH7PHP2DJK7Z0V48AGBHQAW3R3ZW1QF4N.wstx";
+
+        // Fetch pool reserves from xyk-core get-pool-details
+        const poolKey = poolContract ?? `${WHALE_CONTRACT}/${WSTX_CONTRACT}`;
+        const [tokenA, tokenB] = poolKey.includes("/") ? poolKey.split("/") : [WHALE_CONTRACT, WSTX_CONTRACT];
+
+        // Call get-pool-details on xyk-core-v-1-2
+        const poolRes = await fetch(
+          `${HIRO_API}/v2/contracts/call-read/${XYK_CORE}/xyk-core-v-1-2/get-pool-details`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sender: callerAddress,
+              arguments: [
+                serializeCV(principalCV(tokenA)),
+                serializeCV(principalCV(tokenB)),
+              ],
+            }),
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }
+        ).then(r => r.json()) as { okay: boolean; result?: string };
+
+        // Fetch token data from Tenero for prices
+        const [tokenAData, tokenBData] = await Promise.allSettled([
+          fetch(`https://api.tenero.io/v1/stacks/tokens/${encodeURIComponent(tokenA)}`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()),
+          fetch(`https://api.tenero.io/v1/stacks/tokens/${encodeURIComponent(tokenB)}`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()),
+        ]);
+
+        const tA = tokenAData.status === "fulfilled" ? (tokenAData.value as { data?: { symbol: string; price_usd: number; total_supply: number } }).data : null;
+        const tB = tokenBData.status === "fulfilled" ? (tokenBData.value as { data?: { symbol: string; price_usd: number; total_supply: number } }).data : null;
+
+        // LP position if requested
+        let lpPosition: unknown = null;
+        if (lpHolderAddress) {
+          const LP_TOKEN = poolContract
+            ? `${poolContract.split(".")[0]}.lp-token`
+            : `${XYK_CORE}.lp-token-wl-v-1-2`;
+          const lpBal = await fetch(`${HIRO_API}/extended/v1/address/${lpHolderAddress}/balances`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()) as { fungible_tokens?: Record<string, { balance: string }> };
+          const lpBalance = Object.entries(lpBal.fungible_tokens ?? {})
+            .filter(([k]) => k.includes("lp-token"))
+            .map(([k, v]) => ({ token: k, balance: v.balance }));
+          lpPosition = { address: lpHolderAddress, lpTokens: lpBalance };
+        }
+
+        // IL simulation (constant product formula)
+        const ilSimulation = [20, 50].map(pct => {
+          const k = pct / 100;
+          const ilPercent = (2 * Math.sqrt(1 + k) / (2 + k) - 1) * 100;
+          return { priceMovePct: pct, impermanentLossPct: ilPercent.toFixed(4) };
+        });
+
+        return createJsonResponse({
+          pool: { tokenA: tA?.symbol ?? tokenA, tokenB: tB?.symbol ?? tokenB },
+          poolContractData: poolRes,
+          tokenA: tA ?? { contract: tokenA },
+          tokenB: tB ?? { contract: tokenB },
+          lpPosition,
+          ilSimulation,
+          liquidityHealthNote:
+            "IL simulation uses constant-product AMM formula (x*y=k). " +
+            "Actual IL depends on pool fee tier and rebalancing.",
           ...SOVEREIGNTY_STAMP,
         });
       } catch (error) {

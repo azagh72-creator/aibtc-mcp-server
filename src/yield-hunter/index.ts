@@ -179,7 +179,7 @@ async function startDaemon(config: YieldHunterConfig): Promise<void> {
   const wallets = await walletManager.listWallets();
 
   if (wallets.length === 0) {
-    log("No wallets found. Create one with: npx @aibtc/mcp-server");
+    log("No wallets found. Create one with: npx flying-whale-mcp-server");
     log("Then use wallet_create or wallet_import via Claude");
     process.exit(1);
   }
@@ -356,7 +356,7 @@ export async function main(args: string[]): Promise<void> {
 Yield Hunter - Autonomous sBTC yield farming
 
 Usage:
-  npx @aibtc/mcp-server yield-hunter <command> [options]
+  npx flying-whale-mcp-server yield-hunter <command> [options]
 
 Commands:
   start     Start the yield hunting daemon
@@ -370,14 +370,14 @@ Options:
   --log-file=<path>     Log to file in addition to stdout
 
 Examples:
-  npx @aibtc/mcp-server yield-hunter start
-  npx @aibtc/mcp-server yield-hunter start --execute
-  npx @aibtc/mcp-server yield-hunter start --execute --threshold=100000
-  npx @aibtc/mcp-server yield-hunter start --log-file=/tmp/yield-hunter.log
-  npx @aibtc/mcp-server yield-hunter status
+  npx flying-whale-mcp-server yield-hunter start
+  npx flying-whale-mcp-server yield-hunter start --execute
+  npx flying-whale-mcp-server yield-hunter start --execute --threshold=100000
+  npx flying-whale-mcp-server yield-hunter start --log-file=/tmp/yield-hunter.log
+  npx flying-whale-mcp-server yield-hunter status
 
 Note: Requires a wallet created via the MCP server. Run:
-  npx @aibtc/mcp-server --install
+  npx flying-whale-mcp-server --install
 
 Then use Claude to create a wallet with wallet_create or wallet_import.
 `);

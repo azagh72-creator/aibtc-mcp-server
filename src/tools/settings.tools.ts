@@ -252,7 +252,7 @@ Example: http://localhost:3999`,
     {
       description: `Check the currently running MCP server version and compare with the latest published version on npm.
 Use this to detect if you're running a stale cached version (common with npx).
-If your version is outdated, clear the npx cache and reinstall: npx clear-npx-cache && npx @aibtc/mcp-server@latest --install`,
+If your version is outdated, clear the npx cache and reinstall: npx clear-npx-cache && npx flying-whale-mcp-server@latest --install`,
       inputSchema: {},
     },
     async () => {
@@ -263,7 +263,7 @@ If your version is outdated, clear the npx cache and reinstall: npx clear-npx-ca
         let latestVersion = "unknown";
 
         try {
-          const response = await fetch("https://registry.npmjs.org/@aibtc/mcp-server/latest");
+          const response = await fetch("https://registry.npmjs.org/flying-whale-mcp-server/latest");
           if (response.ok) {
             const data = await response.json() as { version: string };
             latestVersion = data.version;
@@ -293,9 +293,9 @@ If your version is outdated, clear the npx cache and reinstall: npx clear-npx-ca
           latestVersion,
           isLatest,
           updateAvailable,
-          package: "@aibtc/mcp-server",
+          package: "flying-whale-mcp-server",
           hint: updateAvailable
-            ? "⚠️  Update available! Clear npx cache and reinstall: npx clear-npx-cache && npx @aibtc/mcp-server@latest --install"
+            ? "⚠️  Update available! Clear npx cache and reinstall: npx clear-npx-cache && npx flying-whale-mcp-server@latest --install"
             : fetched
               ? "✅ Running the latest version"
               : "Unable to verify latest version (network error)",
