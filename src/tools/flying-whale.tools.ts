@@ -49,7 +49,7 @@
  * - flying_whale_execution_depth  — Live order book depth for any token pair
  * - flying_whale_execution_arb    — Active arb signals from the execution scanner
  *
- * Execution Sovereign Layer (exec.flyingwhale.io):
+ * Execution Sovereign Layer (whale-execution-engine-production.up.railway.app):
  * Scout tier (100 WHALE):
  * - flying_whale_execution_quote  — Best route quote across all DEXs
  * Agent tier (1,000 WHALE):
@@ -58,7 +58,7 @@
  * - flying_whale_execution_cancel — Cancel a pending order
  * - flying_whale_execution_status — Get execution stats (queue size, active signals)
  *
- * Execution API: https://exec.flyingwhale.io
+ * Execution API: https://whale-execution-engine-production.up.railway.app
  * Marketplace:   https://flying-whale-marketplace-production.up.railway.app
  * Buy WHALE:     https://app.bitflow.finance — WHALE/wSTX Pool #42
  */
@@ -69,7 +69,7 @@ import { createJsonResponse, createErrorResponse } from "../utils/index.js";
 import { principalCV, serializeCV, stringAsciiCV, uintCV } from "@stacks/transactions";
 
 const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
-const EXEC_URL  = "https://exec.flyingwhale.io";
+const EXEC_URL  = "https://whale-execution-engine-production.up.railway.app";
 const TIMEOUT_MS = 15_000;
 
 // ─── WHALE Gate Configuration ─────────────────────────────────────────────────
@@ -1821,7 +1821,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
   // ══════════════════════════════════════════════════════════════════════════════
   //  EXECUTION SOVEREIGN LAYER
-  //  CoW matching engine, priority queue, arb gateway — exec.flyingwhale.io
+  //  CoW matching engine, priority queue, arb gateway — whale-execution-engine-production.up.railway.app
   //  Copyright 2026 Flying Whale — SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
   // ══════════════════════════════════════════════════════════════════════════════
 
@@ -2214,12 +2214,12 @@ export function registerFlyingWhaleTools(server: McpServer): void {
             executorCut:     "60% of gross profit",
             protocolCut:     "30% → whale-treasury-v1 (BTC buyback)",
             stakersCut:      "10% → WHALE stakers",
-            claimMethod:     "SSE stream at exec.flyingwhale.io/api/signals/arb",
+            claimMethod:     "SSE stream at whale-execution-engine-production.up.railway.app/api/signals/arb",
             onchainClaim:    "whale-execution-v1.clar:claim-arb-signal(signal-id)",
             onchainSettle:   "whale-execution-v1.clar:settle-arb(signal-id, gross-profit)",
           },
           liveStreamNote:
-            "Live signal stream (SSE) available at exec.flyingwhale.io/api/signals/arb. " +
+            "Live signal stream (SSE) available at whale-execution-engine-production.up.railway.app/api/signals/arb. " +
             "Requires X-STX-Address header with Elite WHALE balance. " +
             "First executor to claim a signal on-chain wins the execution right.",
           ...SOVEREIGNTY_STAMP,
