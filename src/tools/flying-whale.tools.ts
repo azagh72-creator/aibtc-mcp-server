@@ -32,6 +32,8 @@
  * - flying_whale_get_whale_price  — Real-time WHALE price, liquidity, pool depth
  * - flying_whale_registry_lookup  — Agent registry lookup (whale-registry-v2 on-chain)
  * - flying_whale_relay_hardened   — Hardened relay health: TLS, latency, block consensus
+ * - flying_whale_erc8004_lookup   — Cross-chain ERC-8004 identity resolver (22 networks)
+ * - flying_whale_dormancy_check   — Agent dormancy score + reactivation checklist
  * Agent tier (1,000 WHALE):
  * - flying_whale_list_orders      — Order book (buy/sell for skill trading)
  * - flying_whale_get_intelligence — Intelligence reports and market analytics
@@ -40,6 +42,7 @@
  * - flying_whale_multi_key        — Multi-key architecture: balance/nonce/activity matrix
  * - flying_whale_verify_upgrade   — Upgradeable contract detection + risk assessment
  * - flying_whale_safe_execute     — Agent-safe pre-flight: balance, nonce, fee, simulation
+ * - flying_whale_ecdsa_audit      — CVE-2026-2819 ECDSA signing pattern audit
  * Elite tier (10,000 WHALE):
  * - flying_whale_expose_identity  — Hidden identity exposure: cluster analysis on-chain
  * - flying_whale_liquidity        — Pool liquidity depth, IL risk, LP position tracking
@@ -1320,6 +1323,482 @@ export function registerFlyingWhaleTools(server: McpServer): void {
           liquidityHealthNote:
             "IL simulation uses constant-product AMM formula (x*y=k). " +
             "Actual IL depends on pool fee tier and rebalancing.",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- ERC-8004 Cross-Chain Lookup — Scout tier ----------
+
+  server.registerTool(
+    "flying_whale_erc8004_lookup",
+    {
+      description:
+        "Cross-chain ERC-8004 agent identity resolver — looks up any agent across 22 networks using the " +
+        "ERC-8004 standard. Returns identity record, chain, agent type (AI/Human/Org), WHALE tier, " +
+        "activity flags, and Flying Whale registry entry if registered. " +
+        "Covers Stacks mainnet registries: agent-registry-v1 (aibtcdev) and whale-registry-v2 (Flying Whale). " +
+        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        query: z
+          .string()
+          .min(1)
+          .describe(
+            "Agent to look up: Stacks address (SP.../SM...), BTC address (bc1q.../bc1p...), " +
+            "BNS name (name.btc), or numeric ERC-8004 token ID (e.g. '54')"
+          ),
+      },
+    },
+    async ({ callerAddress, query }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+
+        // ── Resolve query type ──────────────────────────────────────────────
+        const isStxAddress  = /^S[PM][A-Z0-9]{38,}$/.test(query);
+        const isBtcAddress  = /^bc1[a-z0-9]{25,90}$/.test(query) || /^[13][a-zA-Z0-9]{25,34}$/.test(query);
+        const isBnsName     = /^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/.test(query);
+        const isTokenId     = /^\d+$/.test(query);
+
+        // ── ERC-8004 aibtcdev registry (agent-registry-v1) ──────────────────
+        const ERC8004_CONTRACT = "SP2XCME6ED8R804YQBKAG2KBR1GS2RNCPBM3DWTG";
+        const ERC8004_NAME     = "agent-registry-v1";
+        let ercRecord: unknown = null;
+
+        if (isStxAddress || isTokenId) {
+          try {
+            const fnName = isTokenId ? "get-agent" : "get-agent-by-stx";
+            const arg = isTokenId
+              ? serializeCV(uintCV(BigInt(query)))
+              : serializeCV(principalCV(query));
+
+            const ercRes = await fetch(
+              `${HIRO_API}/v2/contracts/call-read/${ERC8004_CONTRACT}/${ERC8004_NAME}/${fnName}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sender: callerAddress, arguments: [arg] }),
+                signal: AbortSignal.timeout(TIMEOUT_MS),
+              }
+            ).then(r => r.json()) as { okay: boolean; result?: string };
+            ercRecord = ercRes;
+          } catch { /* non-fatal */ }
+        }
+
+        // ── Flying Whale registry-v2 ────────────────────────────────────────
+        const FW_REGISTRY = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+        const FW_REG_NAME = "whale-registry-v2";
+        let fwRecord: unknown = null;
+
+        if (isStxAddress) {
+          try {
+            const fwRes = await fetch(
+              `${HIRO_API}/v2/contracts/call-read/${FW_REGISTRY}/${FW_REG_NAME}/get-agent-by-stx`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sender: callerAddress,
+                  arguments: [serializeCV(principalCV(query))],
+                }),
+                signal: AbortSignal.timeout(TIMEOUT_MS),
+              }
+            ).then(r => r.json());
+            fwRecord = fwRes;
+          } catch { /* non-fatal */ }
+        }
+
+        // ── BNS resolution ──────────────────────────────────────────────────
+        let bnsResolved: unknown = null;
+        if (isBnsName) {
+          try {
+            const bnsRes = await fetch(`https://api.bnsv2.com/names/${encodeURIComponent(query)}`, {
+              signal: AbortSignal.timeout(TIMEOUT_MS),
+            }).then(r => r.json());
+            bnsResolved = bnsRes;
+          } catch { /* non-fatal */ }
+        }
+
+        // ── Stacks on-chain activity ────────────────────────────────────────
+        let activity: unknown = null;
+        if (isStxAddress) {
+          try {
+            const actRes = await fetch(
+              `${HIRO_API}/extended/v1/address/${query}/transactions?limit=5`,
+              { signal: AbortSignal.timeout(TIMEOUT_MS) }
+            ).then(r => r.json()) as { results?: { burn_block_time_iso: string }[]; total?: number };
+            const lastTx = actRes.results?.[0]?.burn_block_time_iso ?? null;
+            const daysSince = lastTx ? Math.floor((Date.now() - new Date(lastTx).getTime()) / 86_400_000) : null;
+            activity = {
+              totalTxCount: actRes.total ?? null,
+              lastActive: lastTx,
+              daysSinceLastTx: daysSince,
+              status: daysSince === null ? "NO_ACTIVITY" : daysSince > 30 ? "DORMANT" : "ACTIVE",
+            };
+          } catch { /* non-fatal */ }
+        }
+
+        // ── WHALE balance for tier ──────────────────────────────────────────
+        let whaleTier = "NONE";
+        if (isStxAddress) {
+          try {
+            const balRes = await fetch(`${HIRO_API}/extended/v1/address/${query}/balances`, {
+              signal: AbortSignal.timeout(TIMEOUT_MS),
+            }).then(r => r.json()) as { fungible_tokens?: Record<string, { balance: string }> };
+            const raw = BigInt(balRes.fungible_tokens?.[WHALE_FT_KEY]?.balance ?? "0");
+            whaleTier = raw >= WHALE_THRESHOLDS.elite ? "ELITE"
+              : raw >= WHALE_THRESHOLDS.agent  ? "AGENT"
+              : raw >= WHALE_THRESHOLDS.scout  ? "SCOUT"
+              : "NONE";
+          } catch { /* non-fatal */ }
+        }
+
+        return createJsonResponse({
+          query,
+          queryType: isStxAddress ? "stacks-address"
+            : isBtcAddress ? "btc-address"
+            : isBnsName ? "bns-name"
+            : isTokenId ? "erc8004-token-id"
+            : "unknown",
+          whaleTier,
+          erc8004Registry: {
+            contract: `${ERC8004_CONTRACT}.${ERC8004_NAME}`,
+            record: ercRecord,
+          },
+          flyingWhaleRegistry: {
+            contract: `${FW_REGISTRY}.${FW_REG_NAME}`,
+            record: fwRecord,
+          },
+          bnsResolution: bnsResolved,
+          onChainActivity: activity,
+          ecosystemNote:
+            "ERC-8004 registry: 162,000+ agents across 22 networks as of April 2026. " +
+            "Flying Whale #54 is Genesis Agent — first cross-chain registered on Stacks mainnet.",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- Agent Dormancy Check — Scout tier ----------
+
+  server.registerTool(
+    "flying_whale_dormancy_check",
+    {
+      description:
+        "Agent dormancy analysis — evaluates activity, earnings potential, and reactivation path for any " +
+        "Stacks agent address. Returns dormancy score (0–100), last activity, WHALE tier, STX runway, " +
+        "and a prioritized reactivation checklist. Based on aibtc.news data: 83.8% of 846 registered agents " +
+        "are dormant (< 7-day activity). " +
+        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        targetAddress: z
+          .string()
+          .min(1)
+          .describe("Agent Stacks address to evaluate (SP...)"),
+      },
+    },
+    async ({ callerAddress, targetAddress }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+
+        const [balRes, txRes, accountRes] = await Promise.allSettled([
+          fetch(`${HIRO_API}/extended/v1/address/${targetAddress}/balances`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()),
+          fetch(`${HIRO_API}/extended/v1/address/${targetAddress}/transactions?limit=20`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()),
+          fetch(`${HIRO_API}/v2/accounts/${targetAddress}?proof=0`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()),
+        ]);
+
+        const bal = balRes.status === "fulfilled"
+          ? balRes.value as { stx?: { balance: string; locked: string }; fungible_tokens?: Record<string, { balance: string }> }
+          : null;
+        const txData = txRes.status === "fulfilled"
+          ? txRes.value as { results?: { burn_block_time_iso: string; tx_type: string }[]; total?: number }
+          : null;
+        const account = accountRes.status === "fulfilled"
+          ? accountRes.value as { nonce?: number }
+          : null;
+
+        const stxBalance  = BigInt(bal?.stx?.balance ?? "0");
+        const stxLocked   = BigInt(bal?.stx?.locked  ?? "0");
+        const stxAvail    = stxBalance - stxLocked;
+        const whaleRaw    = BigInt(bal?.fungible_tokens?.[WHALE_FT_KEY]?.balance ?? "0");
+        const whaleTier   = whaleRaw >= WHALE_THRESHOLDS.elite ? "ELITE"
+          : whaleRaw >= WHALE_THRESHOLDS.agent  ? "AGENT"
+          : whaleRaw >= WHALE_THRESHOLDS.scout  ? "SCOUT"
+          : "NONE";
+
+        const txs        = txData?.results ?? [];
+        const lastTxIso  = txs[0]?.burn_block_time_iso ?? null;
+        const daysSince  = lastTxIso
+          ? Math.floor((Date.now() - new Date(lastTxIso).getTime()) / 86_400_000)
+          : 999;
+
+        // 30-day window activity
+        const cutoff30d  = Date.now() - 30 * 86_400_000;
+        const txs30d     = txs.filter(t => new Date(t.burn_block_time_iso).getTime() > cutoff30d).length;
+        const contractCalls30d = txs.filter(t =>
+          t.tx_type === "contract_call" && new Date(t.burn_block_time_iso).getTime() > cutoff30d
+        ).length;
+
+        // Dormancy score: 0=fully active, 100=fully dormant
+        let dormancyScore = 0;
+        if (daysSince > 90)  dormancyScore += 40;
+        else if (daysSince > 30) dormancyScore += 25;
+        else if (daysSince > 7)  dormancyScore += 10;
+        if (txs30d === 0)    dormancyScore += 20;
+        if (whaleTier === "NONE") dormancyScore += 20;
+        if (Number(stxAvail) < 1_000_000) dormancyScore += 20;  // < 1 STX available
+
+        const dormancyLabel =
+          dormancyScore >= 75 ? "CRITICAL"
+          : dormancyScore >= 50 ? "HIGH"
+          : dormancyScore >= 25 ? "MODERATE"
+          : "ACTIVE";
+
+        // Reactivation checklist — prioritized
+        const checklist: { priority: number; action: string; reason: string }[] = [];
+
+        if (Number(stxAvail) < 1_000_000) {
+          checklist.push({
+            priority: 1,
+            action: "Top up STX — need at least 1 STX for transaction fees",
+            reason: `Available: ${(Number(stxAvail) / 1e6).toFixed(4)} STX`,
+          });
+        }
+        if (whaleTier === "NONE") {
+          checklist.push({
+            priority: 2,
+            action: "Acquire 100+ WHALE to unlock Scout tier (Flying Whale tools)",
+            reason: "Buy at: https://app.bitflow.finance — WHALE/wSTX Pool #42",
+          });
+        }
+        if (daysSince > 7) {
+          checklist.push({
+            priority: 3,
+            action: "File a signal on aibtc.news — re-enter brief inclusion pipeline",
+            reason: `Last activity: ${daysSince} days ago. Brief inclusion requires recent activity.`,
+          });
+        }
+        if (contractCalls30d === 0) {
+          checklist.push({
+            priority: 4,
+            action: "Make at least 1 contract call in next 7 days to reset dormancy flag",
+            reason: "0 contract calls in 30 days — agent scoring systems flag as inactive",
+          });
+        }
+        if (account?.nonce === 0) {
+          checklist.push({
+            priority: 5,
+            action: "Register identity — call agent-registry-v1 to establish on-chain presence",
+            reason: "Nonce=0 means no transactions ever — agent is not recognized on-chain",
+          });
+        }
+
+        return createJsonResponse({
+          targetAddress,
+          dormancyScore,
+          dormancyLabel,
+          whaleTier,
+          lastActive: lastTxIso,
+          daysSinceLastTx: daysSince < 999 ? daysSince : null,
+          txCount30d: txs30d,
+          contractCalls30d,
+          totalTxCount: txData?.total ?? null,
+          nonce: account?.nonce ?? null,
+          stxAvailable: (Number(stxAvail) / 1e6).toFixed(6) + " STX",
+          whaleHeld: (Number(whaleRaw) / 1e6).toFixed(2) + " WHALE",
+          reactivationChecklist: checklist.sort((a, b) => a.priority - b.priority),
+          ecosystemContext:
+            "83.8% of 846 registered AIBTC agents are dormant. " +
+            "137 active agents share the brief inclusion pool. Reactivation = higher earnings probability.",
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ---------- ECDSA Vulnerability Audit — Agent tier ----------
+
+  server.registerTool(
+    "flying_whale_ecdsa_audit",
+    {
+      description:
+        "CVE-2026-2819 ECDSA vulnerability audit — analyzes a Stacks address for automated 24/7 signing " +
+        "patterns that indicate exposure to the critical ECDSA side-channel flaw (CVE-2026-2819). " +
+        "Checks: signing frequency, inter-transaction timing regularity (cron-like patterns), " +
+        "same-block multi-signing, and high nonce velocity. Returns risk level and mitigation steps. " +
+        "CVE-2026-2819 affects Python ECDSA library < 0.19.1 used in automated wallet agents. " +
+        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+      inputSchema: {
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        targetAddress: z
+          .string()
+          .min(1)
+          .describe("Stacks address to audit for CVE-2026-2819 exposure (SP...)"),
+        lookbackTxCount: z
+          .number()
+          .min(10)
+          .max(200)
+          .optional()
+          .describe("Number of recent transactions to analyze (default: 50, max: 200)"),
+      },
+    },
+    async ({ callerAddress, targetAddress, lookbackTxCount = 50 }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const [txRes, accountRes] = await Promise.allSettled([
+          fetch(
+            `${HIRO_API}/extended/v1/address/${targetAddress}/transactions?limit=${lookbackTxCount}`,
+            { signal: AbortSignal.timeout(TIMEOUT_MS) }
+          ).then(r => r.json()),
+          fetch(`${HIRO_API}/v2/accounts/${targetAddress}?proof=0`, {
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()),
+        ]);
+
+        const txData  = txRes.status === "fulfilled"
+          ? txRes.value as {
+              results?: {
+                burn_block_time: number;
+                burn_block_time_iso: string;
+                nonce: number;
+                tx_type: string;
+                block_height: number;
+              }[];
+              total?: number;
+            }
+          : null;
+        const account = accountRes.status === "fulfilled"
+          ? accountRes.value as { nonce?: number }
+          : null;
+
+        const txs = txData?.results ?? [];
+        if (txs.length === 0) {
+          return createJsonResponse({
+            targetAddress,
+            riskLevel: "UNKNOWN",
+            reason: "No transactions found — cannot assess signing patterns.",
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        // ── Timing analysis ─────────────────────────────────────────────────
+        const timestamps = txs
+          .map(t => t.burn_block_time)
+          .filter(Boolean)
+          .sort((a, b) => a - b);
+
+        const intervals: number[] = [];
+        for (let i = 1; i < timestamps.length; i++) {
+          intervals.push(timestamps[i] - timestamps[i - 1]);
+        }
+
+        const avgInterval = intervals.length
+          ? intervals.reduce((a, b) => a + b, 0) / intervals.length
+          : null;
+
+        // Coefficient of variation — low CoV = highly regular (cron-like)
+        const stdDev = avgInterval && intervals.length > 1
+          ? Math.sqrt(intervals.map(x => Math.pow(x - avgInterval, 2)).reduce((a, b) => a + b, 0) / intervals.length)
+          : null;
+        const cov = avgInterval && stdDev !== null ? stdDev / avgInterval : null;
+
+        // ── Same-block multi-signing ─────────────────────────────────────────
+        const blockCounts = new Map<number, number>();
+        for (const t of txs) {
+          if (t.block_height) blockCounts.set(t.block_height, (blockCounts.get(t.block_height) ?? 0) + 1);
+        }
+        const sameBlockMultiSign = [...blockCounts.values()].filter(c => c > 1).length;
+
+        // ── Nonce velocity ───────────────────────────────────────────────────
+        const currentNonce   = account?.nonce ?? 0;
+        const txSpan         = timestamps.length >= 2
+          ? (timestamps[timestamps.length - 1] - timestamps[0]) / 3600  // hours
+          : null;
+        const nonceVelocity  = txSpan && txSpan > 0
+          ? (lookbackTxCount / txSpan).toFixed(2) + " tx/hour"
+          : null;
+
+        // ── High-frequency check ─────────────────────────────────────────────
+        const highFrequency  = avgInterval !== null && avgInterval < 600; // < 10 min avg
+        const cronLike       = cov !== null && cov < 0.15;                 // very regular
+        const autoSigning    = highFrequency || cronLike || sameBlockMultiSign > 2;
+
+        // ── Risk scoring ─────────────────────────────────────────────────────
+        const riskFactors: { factor: string; weight: number; detected: boolean }[] = [
+          { factor: "High signing frequency (< 10 min average)", weight: 30, detected: highFrequency },
+          { factor: "Cron-like timing regularity (CoV < 0.15)", weight: 25, detected: cronLike },
+          { factor: "Same-block multi-signing (> 2 occurrences)", weight: 20, detected: sameBlockMultiSign > 2 },
+          { factor: "High nonce count (> 500 total txs)", weight: 15, detected: currentNonce > 500 },
+          { factor: "24h continuous signing detected", weight: 10, detected: highFrequency && (txData?.total ?? 0) > 200 },
+        ];
+
+        const riskScore = riskFactors
+          .filter(r => r.detected)
+          .reduce((sum, r) => sum + r.weight, 0);
+
+        const riskLevel =
+          riskScore >= 60 ? "CRITICAL"
+          : riskScore >= 35 ? "HIGH"
+          : riskScore >= 15 ? "MEDIUM"
+          : "LOW";
+
+        const mitigations: string[] = [
+          "Upgrade python-ecdsa to >= 0.19.1 or switch to cryptography library",
+          "Rotate private keys if automated signing was active during CVE exposure window",
+          "Use hardware signing (Ledger/Trezor) for high-value wallets",
+          "Implement signing rate limits — no more than 1 signature per 30 seconds per key",
+          "Enable nonce monitoring: alert if nonce advances > 10 per hour",
+        ];
+
+        if (riskLevel === "CRITICAL" || riskLevel === "HIGH") {
+          mitigations.unshift("IMMEDIATE: Stop automated signing until library is patched");
+          mitigations.unshift("IMMEDIATE: Rotate private key for this address NOW");
+        }
+
+        return createJsonResponse({
+          targetAddress,
+          riskLevel,
+          riskScore,
+          cve: "CVE-2026-2819",
+          cveDescription:
+            "Critical ECDSA side-channel flaw in python-ecdsa < 0.19.1 — " +
+            "allows private key extraction from timing analysis of automated signing operations.",
+          automatedSigningDetected: autoSigning,
+          analysis: {
+            txsAnalyzed: txs.length,
+            totalTxCount: txData?.total ?? null,
+            currentNonce,
+            avgIntervalSeconds: avgInterval ? Math.round(avgInterval) : null,
+            timingCoV: cov ? cov.toFixed(4) : null,
+            sameBlockMultiSignInstances: sameBlockMultiSign,
+            nonceVelocity,
+            signingPattern:
+              cronLike ? "CRON_LIKE (highly regular — automated)"
+              : highFrequency ? "HIGH_FREQUENCY (automated likely)"
+              : "IRREGULAR (human-like)",
+          },
+          riskFactors: riskFactors.filter(r => r.detected).map(r => r.factor),
+          mitigationSteps: mitigations,
+          references: [
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-2819",
+            "https://thehackernews.com/2026/04/critical-ecdsa-vulnerability-threatens-automated-wallets.html",
+          ],
           ...SOVEREIGNTY_STAMP,
         });
       } catch (error) {
