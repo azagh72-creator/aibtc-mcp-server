@@ -67,6 +67,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createJsonResponse, createErrorResponse } from "../utils/index.js";
 import { principalCV, serializeCV, stringAsciiCV, uintCV } from "@stacks/transactions";
+import { ipiGetAuditLog, ipiIsCoordinatedAttack, ipiSanitize, IPI_ATTACK_PHRASES } from "./session-guard.js";
 
 const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
 const EXEC_URL  = "https://whale-execution-engine-production.up.railway.app";
@@ -2224,6 +2225,83 @@ export function registerFlyingWhaleTools(server: McpServer): void {
             "First executor to claim a signal on-chain wins the execution right.",
           ...SOVEREIGNTY_STAMP,
         });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  //  IPI DEFENSE AUDIT
+  //  Retroactive review + sanitized signal read
+  //  Copyright 2026 Flying Whale — SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  server.registerTool(
+    "flying_whale_ipi_audit",
+    {
+      title:       "Flying Whale — IPI Defense Audit Log",
+      description: "View all prompt injection attempts detected this session. Shows attack log, coordinated attack patterns, phrase counts, and can sanitize external content before reading it. Use this to audit the aibtc.news signals feed safely.",
+      inputSchema: z.object({
+        action: z.enum(["log", "stats", "sanitize"])
+          .describe("log = show all attack attempts | stats = phrase counts + coordinated attacks | sanitize = clean content and return safe version"),
+        content: z.string().optional()
+          .describe("Content to sanitize (required for action=sanitize)"),
+      }),
+    },
+    async ({ action, content }) => {
+      try {
+        if (action === "log") {
+          const log = ipiGetAuditLog();
+          return createJsonResponse({
+            totalAttacks: log.length,
+            attacks: log.map(e => ({
+              time:    new Date(e.timestamp).toISOString(),
+              phrase:  e.phrase,
+              source:  e.source,
+              snippet: e.contentSnippet,
+            })),
+            knownPhrases: IPI_ATTACK_PHRASES.length,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        if (action === "stats") {
+          const log = ipiGetAuditLog();
+          const phraseCounts: Record<string, number> = {};
+          for (const entry of log) {
+            phraseCounts[entry.phrase] = (phraseCounts[entry.phrase] ?? 0) + 1;
+          }
+          const coordinatedAttacks = Object.entries(phraseCounts)
+            .filter(([phrase]) => ipiIsCoordinatedAttack(phrase))
+            .map(([phrase, count]) => ({ phrase, count }));
+
+          return createJsonResponse({
+            totalAttacks:        log.length,
+            uniquePhrases:       Object.keys(phraseCounts).length,
+            phraseCounts,
+            coordinatedAttacks,
+            isUnderAttack:       coordinatedAttacks.length > 0,
+            knownPhrasePatterns: IPI_ATTACK_PHRASES.length,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        if (action === "sanitize") {
+          if (!content) {
+            return createJsonResponse({ error: "content is required for action=sanitize" });
+          }
+          const result = ipiSanitize(content);
+          return createJsonResponse({
+            wasInjected:    result.wasInjected,
+            removedPhrases: result.removedPhrases,
+            sanitized:      result.sanitized,
+            safe:           !result.wasInjected,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        return createJsonResponse({ error: "Unknown action" });
       } catch (error) {
         return createErrorResponse(error);
       }
