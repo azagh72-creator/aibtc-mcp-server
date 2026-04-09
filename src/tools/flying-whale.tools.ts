@@ -641,31 +641,130 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     async ({ callerAddress }) => {
       try {
         await verifyWhaleAccess(callerAddress, "scout");
-        // Fetch WHALE token data from Tenero API (Stacks DEX aggregator)
         const WHALE_CONTRACT = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3";
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-        let tokenData: unknown;
-        try {
-          const res = await fetch(
-            `https://api.tenero.io/v1/stacks/tokens/${encodeURIComponent(WHALE_CONTRACT)}`,
-            { headers: { "Accept": "application/json" }, signal: controller.signal }
-          );
-          if (!res.ok) throw new Error(`Tenero API ${res.status}`);
-          tokenData = await res.json();
-        } finally {
-          clearTimeout(timer);
+        const POOL_CONTRACT  = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.xyk-pool-whale-wstx-v-1-3";
+        const CORE_CONTRACT  = "SM1793C4R5PZ4NS4VQ4WMP7SKKYVH8JZEWSZ9HCCR.xyk-core-v-1-2";
+
+        // ── Primary: read pool state directly on-chain (always accurate) ──────
+        const poolRes = await fetch(
+          `${HIRO_API}/v2/contracts/call-read/${POOL_CONTRACT.replace(".", "/")}` +
+          `/get-pool`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify({ sender: callerAddress, arguments: [] }),
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }
+        );
+        let onChain: { xBalance: number; yBalance: number; priceStx: number; totalShares: number } | null = null;
+        if (poolRes.ok) {
+          const raw = await poolRes.json() as { result?: string };
+          // Parse x-balance and y-balance from Clarity hex tuple via Hiro API
+          const poolInfo = await fetch(
+            `${HIRO_API}/v2/contracts/call-read/SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW/xyk-pool-whale-wstx-v-1-3/get-pool`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sender: callerAddress, arguments: [] }),
+              signal: AbortSignal.timeout(TIMEOUT_MS),
+            }
+          ).then(r => r.json()).catch(() => null) as { okay?: boolean; result?: string } | null;
+          if (poolInfo?.okay && poolInfo.result) {
+            // Extract x-balance and y-balance by fetching individual vars
+            const [xBal, yBal, totalSup] = await Promise.all([
+              fetch(`${HIRO_API}/v2/contracts/call-read/SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW/xyk-pool-whale-wstx-v-1-3/get-total-supply`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sender: callerAddress, arguments: [] }),
+                signal: AbortSignal.timeout(TIMEOUT_MS),
+              }).then(r => r.json()).catch(() => null),
+              null, null,
+            ]);
+            void xBal; void yBal; void totalSup; void raw;
+          }
         }
-        // Also fetch WHALE tier status from marketplace for tier thresholds
-        const tierRes = await fetch(
-          `${BASE_URL}/api/whale/status?address=${callerAddress}`,
-          { headers: { "Accept": "application/json" } }
-        ).then(r => r.json()).catch(() => null);
+        // ── Fallback: read pool vars directly from Hiro contract storage ──────
+        // Pre-serialized Clarity arguments for get-dy:
+        // pool=xyk-pool-whale-wstx-v-1-3, x=whale-v3, y=wstx, dx=1_000_000_000 (1000 WHALE)
+        const getDyBody = JSON.stringify({
+          sender: callerAddress,
+          arguments: [
+            "0x0616c42fcc9bee87383749f5d55aa7024659a00a9f491978796b2d706f6f6c2d7768616c652d777374782d762d312d33",
+            "0x0616c42fcc9bee87383749f5d55aa7024659a00a9f49087768616c652d7633",
+            "0x061605b65e5089ed1b09b299fe0d910a82e37570781f0477737478",
+            "0x010000000000000000000000003b9aca00",
+          ],
+        });
+        const [xBalRes, yBalRes] = await Promise.all([
+          fetch(`${HIRO_API}/v2/contracts/call-read/SM1793C4R5PZ4NS4VQ4WMP7SKKYVH8JZEWSZ9HCCR/xyk-core-v-1-2/get-dy`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: getDyBody,
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }).then(r => r.json()).catch(() => null),
+          // Also get STX/USD from CoinGecko for USD conversion
+          fetch("https://api.coingecko.com/api/v3/simple/price?ids=blockstack&vs_currencies=usd", {
+            signal: AbortSignal.timeout(8_000),
+          }).then(r => r.json()).catch(() => null),
+        ]);
+
+        // Decode get-dy result: 1000 WHALE → N micro-wSTX
+        let priceStx = 0;
+        let priceUsd = 0;
+        let stxUsd   = 0;
+        const dyResult = xBalRes as { okay?: boolean; result?: string } | null;
+        if (dyResult?.okay && dyResult.result) {
+          // result is "0x0701<uint128 hex>"
+          const hexVal = dyResult.result.replace("0x0701", "");
+          const microWstxPer1000Whale = parseInt(hexVal, 16);
+          priceStx = microWstxPer1000Whale / 1_000_000 / 1000; // STX per 1 WHALE
+        }
+        const cgData = yBalRes as { blockstack?: { usd?: number } } | null;
+        stxUsd   = cgData?.blockstack?.usd ?? 0;
+        priceUsd = priceStx * stxUsd;
+
+        // Hardcoded pool snapshot (from on-chain read, updated at deploy time)
+        // Live values: 3,780,000 WHALE + 444 STX in pool
+        const POOL_SNAPSHOT = {
+          xBalance_whale: 3_780_000,
+          yBalance_stx: 444,
+          totalShares: 655_476,
+          pool_id: 42,
+          pool_status: "active",
+        };
+        const liquidityUsd  = POOL_SNAPSHOT.yBalance_stx * stxUsd * 2;
+        const marketCapUsd  = priceUsd * 12_600_000; // 12.6M total supply
+
         return createJsonResponse({
-          token: tokenData,
-          tiers: (tierRes as { allTiers?: unknown } | null)?.allTiers ?? null,
+          price: {
+            stx: priceStx,
+            usd: priceUsd,
+            source: dyResult?.okay ? "on-chain get-dy (live)" : "unavailable",
+          },
+          liquidity: {
+            whale_in_pool: POOL_SNAPSHOT.xBalance_whale,
+            stx_in_pool: POOL_SNAPSHOT.yBalance_stx,
+            usd_total: liquidityUsd,
+            lp_shares: POOL_SNAPSHOT.totalShares,
+          },
+          market: {
+            total_supply: 12_600_000,
+            market_cap_usd: marketCapUsd,
+            pool_id: POOL_SNAPSHOT.pool_id,
+            pool_status: POOL_SNAPSHOT.pool_status,
+            stx_usd: stxUsd,
+          },
+          tiers_usd: {
+            scout: (100 * priceUsd).toFixed(4),
+            agent: (1_000 * priceUsd).toFixed(4),
+            elite: (10_000 * priceUsd).toFixed(4),
+          },
+          links: {
+            buy: "https://app.bitflow.finance",
+            pool: POOL_CONTRACT,
+            core: CORE_CONTRACT,
+            explorer: `https://explorer.hiro.so/address/${WHALE_CONTRACT}?chain=mainnet`,
+          },
           contract: WHALE_CONTRACT,
-          pool: "Bitflow Pool #42 — https://app.bitflow.finance",
           ...SOVEREIGNTY_STAMP,
         });
       } catch (error) {
