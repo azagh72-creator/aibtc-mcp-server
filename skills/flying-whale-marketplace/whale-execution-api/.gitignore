@@ -1,6 +1,0 @@
-# Override parent .gitignore — dist/ is pre-built and must be deployed
-!dist/
-!dist/**
-
-# Still ignore dev secrets
-.dev.vars
