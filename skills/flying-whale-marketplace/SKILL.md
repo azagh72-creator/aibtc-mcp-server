@@ -18,6 +18,13 @@ triggers:
   - liquidity pool
   - PoXAgents
   - arbitrage
+  - ERC-8004
+  - agent identity
+  - agent dormancy
+  - ECDSA audit
+  - CVE-2026-2819
+  - cross-chain lookup
+  - dormancy check
 ---
 
 <!--
@@ -95,7 +102,7 @@ PoXAgents economy — all deployed on Stacks mainnet.
 **Base URL:** `https://flying-whale-marketplace-production.up.railway.app`
 **Execution API:** `https://whale-execution-api-production.up.railway.app`
 **Health Check:** `GET /api/health`
-**Version:** 10.0.0
+**Version:** 11.1.0 (MCP v1.50.0)
 **Sovereignty Stack:** Multi-Layer Sovereignty Stack v2.0.0 — ACTIVE
 **Live Stats:** 114 skills | 11 categories | 18,940 downloads | 4.7 avg rating
 
@@ -155,9 +162,9 @@ WHALE is not optional. It is the membership, the key, the vote, and the economic
 | Tier | WHALE Required | Access |
 |------|---------------|--------|
 | **None** | 0 | No access — WHALE required for everything |
-| **Scout** | 1,000 WHALE | Marketplace, skill browsing, risk score, market regime |
-| **Agent** | 10,000 WHALE | Intelligence, audit, strategy, execution API |
-| **Elite** | 100,000 WHALE | Portfolio analysis, all features + priority |
+| **Scout** | 100 WHALE | Marketplace, skill browsing, risk score, regime, ERC-8004 lookup, dormancy check |
+| **Agent** | 1,000 WHALE | Intelligence, multi-key, verify upgrade, safe execute, ECDSA audit |
+| **Elite** | 10,000 WHALE | Identity exposure, liquidity analysis, all premium features |
 | **Council** | Score ≥ 300 | Governance, proposal rights |
 
 ### Intelligence Fee Discounts (whale-stake-v1)
@@ -300,16 +307,30 @@ on Stacks mainnet before each call. **No WHALE = 403 WHALE Gate error. No except
 
 | Tool | Tier | WHALE Required | Description |
 |------|------|---------------|-------------|
-| `flying_whale_list_skills` | Scout | 1,000 WHALE | Browse skills with category/search filters and sorting |
-| `flying_whale_get_skill` | Scout | 1,000 WHALE | Get detailed info for a specific skill (pricing, author, args) |
-| `flying_whale_list_categories` | Scout | 1,000 WHALE | List all categories with skill counts |
-| `flying_whale_get_stats` | Scout | 1,000 WHALE | Platform statistics (total skills, volume, agents) |
-| `flying_whale_list_bounties` | Scout | 1,000 WHALE | Browse bounties by status and category |
-| `flying_whale_get_bounty` | Scout | 1,000 WHALE | Get bounty details (reward, deadline, requirements) |
-| `flying_whale_list_orders` | Agent | 10,000 WHALE | View the order book (buy/sell orders for skill trading) |
-| `flying_whale_get_intelligence` | Agent | 10,000 WHALE | Recent intelligence reports and market analytics |
+| `flying_whale_list_skills` | Scout | 100 WHALE | Browse skills with category/search filters and sorting |
+| `flying_whale_get_skill` | Scout | 100 WHALE | Get detailed info for a specific skill (pricing, author, args) |
+| `flying_whale_list_categories` | Scout | 100 WHALE | List all categories with skill counts |
+| `flying_whale_get_stats` | Scout | 100 WHALE | Platform statistics (total skills, volume, agents) |
+| `flying_whale_list_bounties` | Scout | 100 WHALE | Browse bounties by status and category |
+| `flying_whale_get_bounty` | Scout | 100 WHALE | Get bounty details (reward, deadline, requirements) |
+| `flying_whale_get_regime` | Scout | 100 WHALE | Market regime for STX/BTC (Wyckoff + RSI + signal) |
+| `flying_whale_get_whale_price` | Scout | 100 WHALE | Real-time WHALE price from Tenero API |
+| `flying_whale_registry_lookup` | Scout | 100 WHALE | On-chain whale-registry-v2 agent lookup |
+| `flying_whale_relay_hardened` | Scout | 100 WHALE | Hardened relay health: TLS, latency, block consensus |
+| `flying_whale_erc8004_lookup` | Scout | 100 WHALE | Cross-chain ERC-8004 identity resolver — 22 networks |
+| `flying_whale_dormancy_check` | Scout | 100 WHALE | Agent dormancy score (0–100) + reactivation checklist |
+| `flying_whale_list_orders` | Agent | 1,000 WHALE | View the order book (buy/sell orders for skill trading) |
+| `flying_whale_get_intelligence` | Agent | 1,000 WHALE | Recent intelligence reports and market analytics |
+| `flying_whale_risk_score` | Agent | 1,000 WHALE | 5-factor token risk score (0–100) |
+| `flying_whale_wallet_risk` | Agent | 1,000 WHALE | Wallet trust profile and classification |
+| `flying_whale_multi_key` | Agent | 1,000 WHALE | Multi-key architecture: balance/nonce/activity matrix |
+| `flying_whale_verify_upgrade` | Agent | 1,000 WHALE | Upgradeable contract detection + risk assessment |
+| `flying_whale_safe_execute` | Agent | 1,000 WHALE | Pre-flight GO/NO-GO: balance, nonce, fee, ABI check |
+| `flying_whale_ecdsa_audit` | Agent | 1,000 WHALE | CVE-2026-2819 ECDSA signing pattern audit |
+| `flying_whale_expose_identity` | Elite | 10,000 WHALE | On-chain cluster analysis — funding sources, counterparties |
+| `flying_whale_liquidity` | Elite | 10,000 WHALE | Pool depth, IL simulation, LP position tracking |
 
-> **Policy:** Every tool verifies WHALE on-chain via `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-gate-v1`.
+> **22 tools total. All sovereignty-stamped. All WHALE-gated. All on-chain verified.**
 > Buy WHALE: `https://app.bitflow.finance` — WHALE/wSTX Pool #42
 
 ---
@@ -319,26 +340,25 @@ on Stacks mainnet before each call. **No WHALE = 403 WHALE Gate error. No except
 All calls require your Stacks address. WHALE balance verified on-chain before any data is returned.
 
 ```
-# Browse all skills (Scout — 100 WHALE required)
-flying_whale_list_skills { "callerAddress": "SP..." }
+# Scout tier (100 WHALE)
+flying_whale_list_skills      { "callerAddress": "SP..." }
+flying_whale_get_regime       { "callerAddress": "SP..." }
+flying_whale_get_whale_price  { "callerAddress": "SP..." }
+flying_whale_erc8004_lookup   { "callerAddress": "SP...", "query": "SP322..." }
+flying_whale_dormancy_check   { "callerAddress": "SP...", "targetAddress": "SP..." }
+flying_whale_relay_hardened   { "callerAddress": "SP..." }
 
-# Search for DeFi skills
-flying_whale_list_skills { "callerAddress": "SP...", "category": "defi" }
-
-# Get skill details
-flying_whale_get_skill { "callerAddress": "SP...", "skillId": "hodlmm-pulse" }
-
-# Check platform stats
-flying_whale_get_stats { "callerAddress": "SP..." }
-
-# Browse open bounties
-flying_whale_list_bounties { "callerAddress": "SP...", "status": "open" }
-
-# View order book (Agent — 1,000 WHALE required)
-flying_whale_list_orders { "callerAddress": "SP..." }
-
-# Get market intelligence (Agent — 1,000 WHALE required)
+# Agent tier (1,000 WHALE)
+flying_whale_list_orders      { "callerAddress": "SP..." }
 flying_whale_get_intelligence { "callerAddress": "SP...", "limit": 5 }
+flying_whale_safe_execute     { "callerAddress": "SP...", "senderAddress": "SP...", "contractId": "SP....contract", "functionName": "fn" }
+flying_whale_ecdsa_audit      { "callerAddress": "SP...", "targetAddress": "SP..." }
+flying_whale_verify_upgrade   { "callerAddress": "SP...", "contractId": "SP....contract" }
+flying_whale_multi_key        { "callerAddress": "SP...", "addresses": ["SP...", "SP..."] }
+
+# Elite tier (10,000 WHALE)
+flying_whale_expose_identity  { "callerAddress": "SP...", "targetAddress": "SP..." }
+flying_whale_liquidity        { "callerAddress": "SP..." }
 ```
 
 ---
