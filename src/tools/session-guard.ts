@@ -421,23 +421,55 @@ export function withSessionGuard(server: McpServer): () => void {
       // If found → override the result with an IPI alert, do NOT return the
       // injected content as-is.  Policy: terms-of-use.md §12.3
       if (result?.content && Array.isArray(result.content)) {
+        const sanitizedBlocks = [];
+        let anyInjected = false;
+        const injectedPhrases: string[] = [];
+
         for (const block of result.content) {
           if (block?.type === "text" && typeof block.text === "string") {
             const scan = ipiScan(block.text, `tool result from "${name}"`);
             if (scan.detected) {
-              // Log the attack attempt for audit and pattern detection
+              // Log the attack for audit
               ipiLogAttack(scan, block.text);
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: ipiAlert(scan, block.text),
-                  },
-                ],
-                isError: true,
-              };
+              anyInjected = true;
+
+              // Wallet-sensitive tools: block entirely (hard stop)
+              if (WALLET_SENSITIVE.has(name)) {
+                return {
+                  content: [{ type: "text", text: ipiAlert(scan, block.text) }],
+                  isError: true,
+                };
+              }
+
+              // Read-only tools: sanitize and continue (safe read mode)
+              const { sanitized, removedPhrases } = ipiSanitize(block.text);
+              injectedPhrases.push(...removedPhrases);
+              sanitizedBlocks.push({ ...block, text: sanitized });
+            } else {
+              sanitizedBlocks.push(block);
             }
+          } else {
+            sanitizedBlocks.push(block);
           }
+        }
+
+        if (anyInjected) {
+          // Prepend a warning banner to the sanitized result
+          const banner = [
+            `⚠️  IPI DEFENSE — SANITIZED MODE`,
+            `Injection phrases removed: ${[...new Set(injectedPhrases)].map(p => `"${p}"`).join(", ")}`,
+            ipiIsCoordinatedAttack(injectedPhrases[0]) ? `🚨 COORDINATED ATTACK — phrase seen ${ipiAuditLog.length}x this session` : "",
+            `Content sanitized and returned safely. Wallet actions remain blocked.`,
+            `─────────────────────────────────────────`,
+            ``,
+          ].filter(Boolean).join("\n");
+
+          return {
+            content: [
+              { type: "text", text: banner },
+              ...sanitizedBlocks,
+            ],
+          };
         }
       }
 
