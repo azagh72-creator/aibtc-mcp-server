@@ -45,6 +45,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createJsonResponse, createErrorResponse } from "../utils/index.js";
+import { principalCV, serializeCV, stringAsciiCV, uintCV } from "@stacks/transactions";
 
 const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
 const TIMEOUT_MS = 15_000;
@@ -58,9 +59,9 @@ const HIRO_API = "https://api.hiro.so";
 
 // Access tier thresholds (in micro-WHALE, 6 decimals)
 const WHALE_THRESHOLDS = {
-  scout:  1_000n * 1_000_000n,    // 1,000 WHALE
-  agent:  10_000n * 1_000_000n,   // 10,000 WHALE
-  elite:  100_000n * 1_000_000n,  // 100,000 WHALE
+  scout:  100n * 1_000_000n,      // 100 WHALE
+  agent:  1_000n * 1_000_000n,    // 1,000 WHALE
+  elite:  10_000n * 1_000_000n,   // 10,000 WHALE
 } as const;
 
 type WhaleTier = keyof typeof WHALE_THRESHOLDS;
@@ -138,6 +139,8 @@ async function marketplaceFetch(
   query?: Record<string, string | number | undefined>
 ): Promise<unknown> {
   const url = new URL(path, BASE_URL);
+  // Always pass caller address so marketplace can verify WHALE tier and apply discount
+  url.searchParams.set("address", callerAddress);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
@@ -573,8 +576,33 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     async ({ callerAddress }) => {
       try {
         await verifyWhaleAccess(callerAddress, "scout");
-        const data = await marketplaceFetch("/api/whale/price", callerAddress);
-        return createJsonResponse({ ...data as object, _sovereignty: SOVEREIGNTY_STAMP });
+        // Fetch WHALE token data from Tenero API (Stacks DEX aggregator)
+        const WHALE_CONTRACT = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3";
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        let tokenData: unknown;
+        try {
+          const res = await fetch(
+            `https://api.tenero.io/v1/stacks/tokens/${encodeURIComponent(WHALE_CONTRACT)}`,
+            { headers: { "Accept": "application/json" }, signal: controller.signal }
+          );
+          if (!res.ok) throw new Error(`Tenero API ${res.status}`);
+          tokenData = await res.json();
+        } finally {
+          clearTimeout(timer);
+        }
+        // Also fetch WHALE tier status from marketplace for tier thresholds
+        const tierRes = await fetch(
+          `${BASE_URL}/api/whale/status?address=${callerAddress}`,
+          { headers: { "Accept": "application/json" } }
+        ).then(r => r.json()).catch(() => null);
+        return createJsonResponse({
+          token: tokenData,
+          tiers: (tierRes as { allTiers?: unknown } | null)?.allTiers ?? null,
+          contract: WHALE_CONTRACT,
+          pool: "Bitflow Pool #42 — https://app.bitflow.finance",
+          ...SOVEREIGNTY_STAMP,
+        });
       } catch (error) {
         return createErrorResponse(error);
       }
@@ -606,11 +634,67 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     async ({ callerAddress, query, chain }) => {
       try {
         await verifyWhaleAccess(callerAddress, "scout");
-        const data = await marketplaceFetch("/api/registry/agents", callerAddress, {
-          q: query,
-          chain,
+        // Query whale-registry-v2 on-chain via Hiro read-only API
+        const REGISTRY_CONTRACT = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+        const REGISTRY_NAME = "whale-registry-v2";
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        let result: unknown;
+        let statsResult: unknown;
+        try {
+          // Determine which function + args based on query format
+          const isStxAddress = /^S[PM][0-9A-Z]{38,}$/.test(query);
+          let fnName: string;
+          let args: string[];
+          if (isStxAddress) {
+            fnName = "get-agent-by-stx";
+            args = [serializeCV(principalCV(query))];
+          } else if (chain) {
+            // Native address lookup: get-agent-by-native(chain uint, addr string-ascii)
+            const chainMap: Record<string, number> = { btc: 1, stx: 2, eth: 3, sol: 4, other: 5 };
+            fnName = "get-agent-by-native";
+            args = [
+              serializeCV(uintCV(chainMap[chain] ?? 1)),
+              serializeCV(stringAsciiCV(query)),
+            ];
+          } else {
+            // Default: try STX-style lookup on name search via is-registered
+            fnName = "get-registry-stats";
+            args = [];
+          }
+          const [agentRes, statsRes] = await Promise.all([
+            fetch(
+              `${HIRO_API}/v2/contracts/call-read/${REGISTRY_CONTRACT}/${REGISTRY_NAME}/${fnName}`,
+              {
+                method: "POST",
+                headers: { "Accept": "application/json", "Content-Type": "application/json" },
+                body: JSON.stringify({ sender: callerAddress, arguments: args }),
+                signal: controller.signal,
+              }
+            ),
+            fetch(
+              `${HIRO_API}/v2/contracts/call-read/${REGISTRY_CONTRACT}/${REGISTRY_NAME}/get-registry-stats`,
+              {
+                method: "POST",
+                headers: { "Accept": "application/json", "Content-Type": "application/json" },
+                body: JSON.stringify({ sender: callerAddress, arguments: [] }),
+              }
+            ),
+          ]);
+          if (!agentRes.ok) throw new Error(`Hiro contract call ${agentRes.status}`);
+          result = await agentRes.json();
+          statsResult = await statsRes.json().catch(() => null);
+        } finally {
+          clearTimeout(timer);
+        }
+        return createJsonResponse({
+          query,
+          chain: chain ?? "auto-detected",
+          registry: `${REGISTRY_CONTRACT}.${REGISTRY_NAME}`,
+          result,
+          registryStats: statsResult,
+          ...SOVEREIGNTY_STAMP,
         });
-        return createJsonResponse({ ...data as object, _sovereignty: SOVEREIGNTY_STAMP });
       } catch (error) {
         return createErrorResponse(error);
       }
