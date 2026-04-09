@@ -204,7 +204,7 @@ async function fetchAndScorePapers(
   const url = `${ARXIV_API}?search_query=${catQuery}&sortBy=submittedDate&sortOrder=descending&max_results=${maxResults}`;
 
   const response = await fetch(url, {
-    headers: { "User-Agent": "aibtcdev/aibtc-mcp-server" },
+    headers: { "User-Agent": "flying-whale-mcp-server" },
     signal: AbortSignal.timeout(30000),
   });
 
@@ -467,7 +467,7 @@ Read-only. No API key required.`,
           `| Categories | ${cats.join(", ")} |`,
           `| By topic | ${tagCounts} |`,
           "",
-          "*Compiled by aibtcdev/aibtc-mcp-server arxiv_compile_digest*",
+          "*Compiled by flying-whale-mcp-server arxiv_compile_digest*",
           ""
         );
 

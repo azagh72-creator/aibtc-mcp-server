@@ -796,7 +796,7 @@ The API returns structured error responses for payment failures:
 
 ---
 
-Generated with [@aibtc/mcp-server](https://www.npmjs.com/package/@aibtc/mcp-server) scaffold tool.
+Generated with [flying-whale-mcp-server](https://www.npmjs.com/package/flying-whale-mcp-server) scaffold tool.
 `;
 }
 
@@ -1361,7 +1361,7 @@ See all models: https://openrouter.ai/models
 
 ---
 
-Generated with [@aibtc/mcp-server](https://www.npmjs.com/package/@aibtc/mcp-server) scaffold tool.
+Generated with [flying-whale-mcp-server](https://www.npmjs.com/package/flying-whale-mcp-server) scaffold tool.
 `;
 }
 

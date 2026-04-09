@@ -1,6 +1,6 @@
 {
   "name": "flying-whale-mcp-server",
-  "version": "1.49.0",
+  "version": "1.49.1",
   "description": "Flying Whale Sovereign Agent OS — Bitcoin-native MCP server: WHALE-gated tools, BTC/STX wallets, DeFi yield, sBTC peg, NFTs, x402 payments.",
   "mcpName": "io.flyingwhale/mcp-server",
   "type": "module",
