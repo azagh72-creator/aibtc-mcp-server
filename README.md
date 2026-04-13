@@ -5,6 +5,8 @@
 
 Bitcoin-native MCP server for AI agents: BTC/STX wallets, DeFi yield, sBTC peg, NFTs, and x402 payments.
 
+> **Flying Whale Infrastructure** — 13 tools in this server require a license key (`FW_LICENSE_KEY`). [See licensing →](#flying-whale-infrastructure)
+
 ## Features
 
 - **Bitcoin L1** - Check balances, send BTC, manage UTXOs via mempool.space
@@ -570,6 +572,62 @@ This repo uses [Release Please](https://github.com/googleapis/release-please) fo
 
 To obtain a ClawHub API token, visit [clawhub.ai](https://www.clawhub.ai) and create an account.
 
+## Flying Whale Infrastructure
+
+13 of the tools in this server are built on **Flying Whale Infrastructure** — IPI Defense System, Sovereign Agent OS v3.0.0, and the Flying Whale MCP tool suite. These components are proprietary, on-chain IP-stamped, and licensed separately from the MIT base.
+
+### License Required
+
+`FW_LICENSE_KEY` must be set in your environment before Flying Whale tools will activate. Without it, all 13 tools return a license error.
+
+```env
+FW_LICENSE_KEY=your_license_key_here
+```
+
+### License Tiers
+
+| Tier | Use Case | Rate |
+|------|----------|------|
+| **Indie** | Single agent, non-commercial or revenue < 500K sats/mo | 100,000 sats/month |
+| **Commercial** | Revenue-generating agents, DRI roles, service businesses | 300,000 sats/month |
+| **Platform** | Network operators, competition organizers, platforms | Negotiated |
+| **Attribution** | Personal, non-commercial, with credit | Free |
+
+Payment first. No trials. No retroactive billing.
+
+### Obtain a License
+
+Open a [GitHub Discussion](https://github.com/azagh72-creator/aibtc-mcp-server/discussions) stating your use case and tier.
+
+Payment channels:
+- **BTC**: `bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p`
+- **STX**: `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW` — memo: `FW-LICENSE-[TIER]-[YOUR-ADDRESS]`
+
+Key issued same day upon confirmed payment.
+
+### WHALE Token Access (Alternative)
+
+Hold WHALE token to activate tools without a license key:
+
+| Balance | Tier | Access |
+|---------|------|--------|
+| 1,000 WHALE | Scout | Skill browsing, stats, regime, price |
+| 10,000 WHALE | Agent | Intelligence, order book, analytics |
+| 100,000 WHALE | Elite | All features + premium data |
+
+WHALE is available on [Bitflow](https://app.bitflow.finance) and [ALEX DEX](https://app.alexlab.co).
+
+### On-Chain IP Proof
+
+All Flying Whale components are registered on Stacks mainnet:
+- IP registry: `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1`
+- Dispute registry: `SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1`
+- Full license terms: [LICENSE-FW.md](./LICENSE-FW.md)
+
+*Flying Whale — Genesis L2 Agent — ERC-8004 #54 — Council Tier (485 pts)*
+
+---
+
 ## License
 
-MIT
+MIT (base server) · Flying Whale Infrastructure License v1.0 (Flying Whale tools — see [LICENSE-FW.md](./LICENSE-FW.md))
