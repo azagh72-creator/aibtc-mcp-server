@@ -349,6 +349,13 @@ class SessionGuard {
     return { allowed: true };
   }
 
+  unblock(): void {
+    this.blocked = false;
+    this.blockReason = "";
+    // Clear the call history tail so consecutive detection resets cleanly
+    this.calls = this.calls.slice(-2);
+  }
+
   stats(): {
     totalCalls: number;
     walletCalls: number;
@@ -387,6 +394,10 @@ function getGuard(server: object): SessionGuard {
     sessionRegistry.set(server, g);
   }
   return g;
+}
+
+export function unblockSession(server: object): void {
+  getGuard(server).unblock();
 }
 
 // ─── MCP Server Wrapper ────────────────────────────────────────────────────────
