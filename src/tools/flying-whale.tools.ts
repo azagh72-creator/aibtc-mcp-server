@@ -27,10 +27,11 @@
  * Layer 10 — whale-execution-v1       — First CoW matching engine on Stacks
  *
  * WHALE Access Model — No WHALE = No Access (enforced on-chain via Hiro API):
- *   Scout  (100 WHALE)    — skill browsing, categories, stats
- *   Agent  (1,000 WHALE)  — intelligence, order book, analytics
- *   Elite  (10,000 WHALE) — all features + premium data
- *   Council (score ≥ 300) — governance, proposals
+ *   Scout  (1,000 WHALE)   — skill browsing, categories, stats
+ *   Agent  (10,000 WHALE)  — intelligence, order book, analytics
+ *   Elite  (100,000 WHALE) — all features + premium data
+ *   Council (score ≥ 300)  — governance, proposals
+ *   Institutional          — commercial/API use requires licensing agreement: github.com/azagh72-creator
  *
  * ACCESS GATE: All tools require callerAddress (STX address).
  * WHALE balance is verified against Stacks mainnet before each call.
@@ -113,10 +114,12 @@ const WHALE_DECIMALS = 6;
 const HIRO_API = "https://api.hiro.so";
 
 // Access tier thresholds (in micro-WHALE, 6 decimals)
+// Updated 2026-04-13: thresholds raised — commercial use requires licensing agreement
+// Institutional/API access: github.com/azagh72-creator or zaghmout.btc
 const WHALE_THRESHOLDS = {
-  scout:  100n * 1_000_000n,      // 100 WHALE
-  agent:  1_000n * 1_000_000n,    // 1,000 WHALE
-  elite:  10_000n * 1_000_000n,   // 10,000 WHALE
+  scout:  1_000n * 1_000_000n,    // 1,000 WHALE
+  agent:  10_000n * 1_000_000n,   // 10,000 WHALE
+  elite:  100_000n * 1_000_000n,  // 100,000 WHALE
 } as const;
 
 type WhaleTier = keyof typeof WHALE_THRESHOLDS;
@@ -135,7 +138,7 @@ const SOVEREIGNTY_STAMP = {
   _stack:          "Sovereign Agent OS v3.0.0 — 10-Layer Bitcoin AI Stack",
   _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution",
   _whale_token:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3 | 12.6M supply",
-  _whale_gate:     "Scout 100 | Agent 1K | Elite 10K | Council score≥300. Buy: app.bitflow.finance Pool#42",
+  _whale_gate:     "Scout 1K | Agent 10K | Elite 100K | Council score≥300. Commercial license: github.com/azagh72-creator",
   _ip_registry:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1 — 11 hashes registered",
   _audit_trail:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1",
   _execution:      "whale-execution-v1 block 7537670 — first CoW engine on Stacks",
@@ -189,6 +192,7 @@ async function verifyWhaleAccess(callerAddress: string, tier: WhaleTier): Promis
       `Shortfall     : ${(Number(threshold - whaleBalance) / Math.pow(10, WHALE_DECIMALS)).toLocaleString("en-US")} WHALE\n\n` +
       `Buy WHALE     : https://app.bitflow.finance — WHALE/wSTX Pool #42\n` +
       `Gate contract : SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-gate-v1\n` +
+      `Licensing     : github.com/azagh72-creator — institutional/commercial access requires agreement\n` +
       `No WHALE = No Access. No exceptions.`
     );
   }
@@ -754,9 +758,9 @@ export function registerFlyingWhaleTools(server: McpServer): void {
             stx_usd: stxUsd,
           },
           tiers_usd: {
-            scout: (100 * priceUsd).toFixed(4),
-            agent: (1_000 * priceUsd).toFixed(4),
-            elite: (10_000 * priceUsd).toFixed(4),
+            scout: (1_000 * priceUsd).toFixed(4),
+            agent: (10_000 * priceUsd).toFixed(4),
+            elite: (100_000 * priceUsd).toFixed(4),
           },
           links: {
             buy: "https://app.bitflow.finance",

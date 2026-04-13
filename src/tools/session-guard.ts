@@ -225,8 +225,7 @@ const WALLET_SENSITIVE: Set<string> = new Set([
   "transfer_token",
   "transfer_nft",
   "broadcast_transaction",
-  // Wallet operations
-  "wallet_unlock",
+  // Wallet operations (unlock excluded — it doesn't spend funds, blocking it prevents recovery)
   "wallet_create",
   "wallet_import",
   "wallet_export",
