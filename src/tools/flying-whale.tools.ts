@@ -184,12 +184,19 @@ async function verifyWhaleAccess(callerAddress: string, tier: WhaleTier): Promis
   if (whaleBalance < threshold) {
     const held = (Number(whaleBalance) / Math.pow(10, WHALE_DECIMALS)).toLocaleString("en-US", { maximumFractionDigits: 2 });
     const required = (Number(threshold) / Math.pow(10, WHALE_DECIMALS)).toLocaleString("en-US");
+    // Approximate USD at ~$0.002/WHALE (recalibrate with: flying_whale_get_whale_price)
+    const pricePerWhale = 0.002;
+    const requiredNum = Number(threshold) / Math.pow(10, WHALE_DECIMALS);
+    const requiredUsd = (requiredNum * pricePerWhale).toFixed(2);
+    const shortfall = Number(threshold - whaleBalance) / Math.pow(10, WHALE_DECIMALS);
+    const shortfallUsd = (shortfall * pricePerWhale).toFixed(2);
     throw new Error(
       `WHALE Gate — Access Denied\n\n` +
-      `Tier required : ${tier.toUpperCase()} (${required} WHALE)\n` +
+      `Tier required : ${tier.toUpperCase()} — ${required} WHALE (~$${requiredUsd} USD)\n` +
       `Address       : ${callerAddress}\n` +
       `You hold      : ${held} WHALE\n` +
-      `Shortfall     : ${(Number(threshold - whaleBalance) / Math.pow(10, WHALE_DECIMALS)).toLocaleString("en-US")} WHALE\n\n` +
+      `Shortfall     : ${shortfall.toLocaleString("en-US")} WHALE (~$${shortfallUsd} USD)\n\n` +
+      `Tier pricing  : Scout $2.20 | Agent $22 | Elite $220 (at ~$0.002/WHALE)\n` +
       `Buy WHALE     : https://app.bitflow.finance — WHALE/wSTX Pool #42\n` +
       `Gate contract : SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-gate-v1\n` +
       `Licensing     : github.com/azagh72-creator — institutional/commercial access requires agreement\n` +
