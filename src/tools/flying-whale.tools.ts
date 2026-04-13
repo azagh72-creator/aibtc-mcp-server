@@ -99,7 +99,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createJsonResponse, createErrorResponse } from "../utils/index.js";
 import { principalCV, serializeCV, stringAsciiCV, uintCV } from "@stacks/transactions";
-import { ipiGetAuditLog, ipiIsCoordinatedAttack, ipiSanitize, IPI_ATTACK_PHRASES } from "./session-guard.js";
+import { ipiGetAuditLog, ipiIsCoordinatedAttack, ipiSanitize, IPI_ATTACK_PHRASES, unblockSession } from "./session-guard.js";
 
 const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
 const EXEC_URL  = "https://whale-execution-engine-production.up.railway.app";
@@ -2384,14 +2384,23 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       title:       "Flying Whale — IPI Defense Audit Log",
       description: "View all prompt injection attempts detected this session. Shows attack log, coordinated attack patterns, phrase counts, and can sanitize external content before reading it. Use this to audit the aibtc.news signals feed safely.",
       inputSchema: z.object({
-        action: z.enum(["log", "stats", "sanitize"])
-          .describe("log = show all attack attempts | stats = phrase counts + coordinated attacks | sanitize = clean content and return safe version"),
+        action: z.enum(["log", "stats", "sanitize", "unblock"])
+          .describe("log = show all attack attempts | stats = phrase counts + coordinated attacks | sanitize = clean content and return safe version | unblock = owner override to clear loop-detection block"),
         content: z.string().optional()
           .describe("Content to sanitize (required for action=sanitize)"),
       }),
     },
     async ({ action, content }) => {
       try {
+        if (action === "unblock") {
+          unblockSession(server);
+          return createJsonResponse({
+            unblocked: true,
+            message: "Session guard loop-detection block cleared. Wallet operations re-enabled.",
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
         if (action === "log") {
           const log = ipiGetAuditLog();
           return createJsonResponse({
