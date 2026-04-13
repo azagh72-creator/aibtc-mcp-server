@@ -110,8 +110,13 @@ const TIMEOUT_MS = 15_000;
 // FW_LICENSE_KEY must be set in environment to use Flying Whale tools.
 // Obtain a license: github.com/azagh72-creator | zaghmout.btc
 // License tiers: Indie 100k sats/mo | Commercial 300k sats/mo | Platform: negotiate
-const FW_LICENSE_KEY = process.env.FW_LICENSE_KEY ?? "";
+const FW_OWNER_ADDRESS = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+const FW_LICENSE_KEY   = process.env.FW_LICENSE_KEY ?? "";
+// Owner key: set FW_LICENSE_KEY=OWNER in your .env to activate owner bypass
+const FW_IS_OWNER      = FW_LICENSE_KEY === "OWNER" || FW_LICENSE_KEY === FW_OWNER_ADDRESS;
+
 function assertLicensed(): void {
+  if (FW_IS_OWNER) return; // owner always has access
   if (!FW_LICENSE_KEY || FW_LICENSE_KEY.trim() === "") {
     throw new Error(
       `Flying Whale Infrastructure — License Required\n\n` +
