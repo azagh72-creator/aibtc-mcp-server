@@ -106,6 +106,30 @@ const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
 const EXEC_URL  = "https://whale-execution-engine-production.up.railway.app";
 const TIMEOUT_MS = 15_000;
 
+// ─── License Gate ─────────────────────────────────────────────────────────────
+// FW_LICENSE_KEY must be set in environment to use Flying Whale tools.
+// Obtain a license: github.com/azagh72-creator | zaghmout.btc
+// License tiers: Indie 100k sats/mo | Commercial 300k sats/mo | Platform: negotiate
+const FW_LICENSE_KEY = process.env.FW_LICENSE_KEY ?? "";
+function assertLicensed(): void {
+  if (!FW_LICENSE_KEY || FW_LICENSE_KEY.trim() === "") {
+    throw new Error(
+      `Flying Whale Infrastructure — License Required\n\n` +
+      `FW_LICENSE_KEY is not set. Flying Whale tools require a valid license key.\n\n` +
+      `License tiers:\n` +
+      `  Indie      : 100,000 sats/month\n` +
+      `  Commercial : 300,000 sats/month\n` +
+      `  Platform   : negotiated\n\n` +
+      `Obtain a license:\n` +
+      `  GitHub : github.com/azagh72-creator\n` +
+      `  BTC    : bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p\n` +
+      `  STX    : SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW\n\n` +
+      `Payment first. No trials. No exceptions.\n` +
+      `On-chain IP: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1`
+    );
+  }
+}
+
 // ─── WHALE Gate Configuration ─────────────────────────────────────────────────
 // WHALE token: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3
 // Fungible token ID in Hiro balance response format
@@ -157,6 +181,7 @@ const SOVEREIGNTY_STAMP = {
  * No fallback — if the check fails, the call is blocked.
  */
 async function verifyWhaleAccess(callerAddress: string, tier: WhaleTier): Promise<void> {
+  assertLicensed();
   const url = `${HIRO_API}/extended/v1/address/${callerAddress}/balances`;
 
   const controller = new AbortController();
@@ -214,6 +239,7 @@ async function marketplaceFetch(
   callerAddress: string,
   query?: Record<string, string | number | undefined>
 ): Promise<unknown> {
+  assertLicensed();
   const url = new URL(path, BASE_URL);
   // Always pass caller address so marketplace can verify WHALE tier and apply discount
   url.searchParams.set("address", callerAddress);
@@ -233,6 +259,7 @@ async function marketplaceFetch(
         "X-Fw-Agent": "aibtc-mcp-server - Flying Whale Marketplace Skill",
         "X-Fw-Stack": "Multi-Layer Sovereignty Stack v2.0.0",
         "X-Fw-Caller": callerAddress,
+        "X-Fw-License": FW_LICENSE_KEY,
       },
       signal: controller.signal,
     });
