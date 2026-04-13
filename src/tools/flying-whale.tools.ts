@@ -234,6 +234,18 @@ async function verifyWhaleAccess(callerAddress: string, tier: WhaleTier): Promis
 // Helpers
 // ============================================================================
 
+/** Standard licensed headers for all Flying Whale API calls */
+function fwHeaders(callerAddress?: string): Record<string, string> {
+  assertLicensed();
+  return {
+    "Accept":        "application/json",
+    "X-Fw-License":  FW_LICENSE_KEY,
+    "X-Fw-Agent":    "aibtc-mcp-server - Flying Whale",
+    "X-Fw-Stack":    "Sovereign Agent OS v3.0.0",
+    ...(callerAddress ? { "X-Fw-Caller": callerAddress, "X-STX-Address": callerAddress } : {}),
+  };
+}
+
 async function marketplaceFetch(
   path: string,
   callerAddress: string,
@@ -254,13 +266,7 @@ async function marketplaceFetch(
 
   try {
     const res = await fetch(url.toString(), {
-      headers: {
-        "Accept": "application/json",
-        "X-Fw-Agent": "aibtc-mcp-server - Flying Whale Marketplace Skill",
-        "X-Fw-Stack": "Multi-Layer Sovereignty Stack v2.0.0",
-        "X-Fw-Caller": callerAddress,
-        "X-Fw-License": FW_LICENSE_KEY,
-      },
+      headers: fwHeaders(callerAddress),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -2078,7 +2084,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const url = `${EXEC_URL}/api/route/quote?token_in=${encodeURIComponent(tokenIn)}&token_out=${encodeURIComponent(tokenOut)}&amount=${encodeURIComponent(amount)}`;
         const res = await fetch(url, {
-          headers: { "X-STX-Address": callerAddress },
+          headers: fwHeaders(callerAddress),
           signal:  AbortSignal.timeout(TIMEOUT_MS),
         });
 
@@ -2153,10 +2159,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const res = await fetch(`${EXEC_URL}/api/order/submit`, {
           method:  "POST",
-          headers: {
-            "Content-Type":  "application/json",
-            "X-STX-Address": callerAddress,
-          },
+          headers: { ...fwHeaders(callerAddress), "Content-Type": "application/json" },
           body: JSON.stringify({
             token_in:       tokenIn,
             token_out:      tokenOut,
@@ -2226,10 +2229,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const res = await fetch(`${EXEC_URL}/api/order/${encodeURIComponent(orderId)}/boost`, {
           method:  "POST",
-          headers: {
-            "Content-Type":  "application/json",
-            "X-STX-Address": callerAddress,
-          },
+          headers: { ...fwHeaders(callerAddress), "Content-Type": "application/json" },
           body:   JSON.stringify({ whale_amount: whaleAmount }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
@@ -2278,7 +2278,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const res = await fetch(`${EXEC_URL}/api/order/${encodeURIComponent(orderId)}`, {
           method:  "DELETE",
-          headers: { "X-STX-Address": callerAddress },
+          headers: fwHeaders(callerAddress),
           signal:  AbortSignal.timeout(TIMEOUT_MS),
         });
 
@@ -2328,7 +2328,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const url = `${EXEC_URL}/api/book/depth?token_in=${encodeURIComponent(tokenIn)}&token_out=${encodeURIComponent(tokenOut)}`;
         const res = await fetch(url, {
-          headers: { "X-STX-Address": callerAddress },
+          headers: fwHeaders(callerAddress),
           signal:  AbortSignal.timeout(TIMEOUT_MS),
         });
 
@@ -2375,7 +2375,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         await verifyWhaleAccess(callerAddress, "elite");
 
         const res = await fetch(`${EXEC_URL}/api/stats`, {
-          headers: { "X-STX-Address": callerAddress },
+          headers: fwHeaders(callerAddress),
           signal:  AbortSignal.timeout(TIMEOUT_MS),
         });
 
@@ -2430,6 +2430,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     },
     async ({ action, content }) => {
       try {
+        assertLicensed();
         if (action === "log") {
           const log = ipiGetAuditLog();
           return createJsonResponse({
