@@ -60,6 +60,7 @@
  * - flying_whale_verify_upgrade   — Upgradeable contract detection + risk assessment
  * - flying_whale_safe_execute     — Agent-safe pre-flight: balance, nonce, fee, simulation
  * - flying_whale_ecdsa_audit      — CVE-2026-2819 ECDSA signing pattern audit
+ * - flying_whale_pact_xchain      — Cross-chain atomic pact: Stacks ↔ Arbitrum One (PactCrossChain.sol)
  * Elite tier (10,000 WHALE):
  * - flying_whale_expose_identity  — Hidden identity exposure: cluster analysis on-chain
  * - flying_whale_liquidity        — Pool liquidity depth, IL risk, LP position tracking
@@ -171,7 +172,7 @@ const SOVEREIGNTY_STAMP = {
   _whale_gate:     "Scout 100 | Agent 1K | Elite 10K | Council score≥300. Buy: app.bitflow.finance Pool#42",
   _ip_registry:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1 — 15 hashes registered",
   _audit_trail:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1",
-  _execution:      "whale-execution-v1 block 7537670 — first CoW engine on Stacks",
+  _execution:      "whale-execution-v1 block 7537670 — first CoW engine on Stacks | PactCrossChain.sol 0x538D5a4266154F0Ca97891B75F5e71a90c651DDF (Arbitrum One, block 452374909)",
   _economy:        "x402 payments → whale-treasury-v1 buyback → WHALE burn → price support",
   _ipi_defense:    "IPI Defense v2 active — coordinated attack detection + sanitize mode",
   _mcp_version:    "aibtc-mcp-server v1.57.0 | @aibtc/mcp-server on npm",
@@ -3427,6 +3428,274 @@ export function registerFlyingWhaleTools(server: McpServer): void {
           contract: `${PACT_ADDR}.${PACT_NAME}`,
           ...SOVEREIGNTY_STAMP,
         });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 10. flying_whale_pact_xchain ──────────────────────────────────────────────
+  // PactCrossChain.sol — Arbitrum One, deployed 2026-04-14 by praxisagent
+  // Contract: 0x538D5a4266154F0Ca97891B75F5e71a90c651DDF
+  // TX: 0x0d88f1a370919f33bff26183da736c7b52ce78dddb6e9ed33ca07a6c327051b2
+  // Flow: same preimage unlocks both chains — Stacks (sha256) + Arbitrum (keccak256+sha256)
+  server.registerTool(
+    "flying_whale_pact_xchain",
+    {
+      title: "Flying Whale — Cross-Chain Pact Bridge (Arbitrum ↔ Stacks)",
+      description:
+        "PactCrossChain.sol — permissionless atomic swap between Stacks whale-pact-v1 and Arbitrum One. " +
+        "Deployed 2026-04-14 at 0x538D5a4266154F0Ca97891B75F5e71a90c651DDF (Arbitrum One, block 452374909). " +
+        "One preimage settles both chains. " +
+        "\n\nFlow: Both parties agree on a random preimage (32 bytes). " +
+        "Creator computes sha256(preimage) for Stacks and keccak256(preimage) for Arbitrum. " +
+        "Lock PACT tokens on Arbitrum (create) + lock STX on Stacks (whale-pact-v1 create-pact, proofType=HASH). " +
+        "Worker completes work → reveals preimage on Stacks → gets STX → keeper relays preimage → Arbitrum releases PACT. " +
+        "\n\nActions: " +
+        "commitment — derive sha256 + keccak256 from preimage hex. " +
+        "create — prepare Arbitrum create() calldata (lock PACT). " +
+        "release — prepare Arbitrum release() calldata (claim PACT with preimage). " +
+        "reclaim — prepare Arbitrum reclaim() calldata (creator recovers after deadline). " +
+        "lookup — read lock state from Arbitrum via public RPC. " +
+        "\n\nWHALE gate: Agent tier (10,000 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        action: z.enum(["commitment", "create", "release", "reclaim", "lookup"])
+          .describe("commitment | create | release | reclaim | lookup"),
+        preimage: z.string().optional()
+          .describe("Hex preimage (64 chars, 32 bytes) — required for commitment and release actions"),
+        beneficiary: z.string().optional()
+          .describe("Ethereum address of worker who will receive PACT — required for create"),
+        amountWei: z.string().optional()
+          .describe("PACT amount in wei (18 decimals) — required for create"),
+        deadlineTs: z.number().int().optional()
+          .describe("Unix timestamp deadline — required for create"),
+        lockId: z.number().int().optional()
+          .describe("Arbitrum lock ID — required for release, reclaim, lookup"),
+      }),
+    },
+    async ({ callerAddress, action, preimage, beneficiary, amountWei, deadlineTs, lockId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const PACT_EVM_ADDR = "0x538D5a4266154F0Ca97891B75F5e71a90c651DDF";
+        const ARB_RPC       = "https://arb1.arbitrum.io/rpc";
+        const ARB_CHAIN_ID  = 42161;
+
+        // ── ABI fragments (4-byte selectors) ────────────────────────────────
+        // create(address beneficiary, uint256 amount, uint256 deadline, bytes32 keccakHash, bytes32 sha256Hash)
+        // selector: keccak256("create(address,uint256,uint256,bytes32,bytes32)")[0:4]
+        // release(uint256 lockId, bytes calldata preimage)
+        // selector: keccak256("release(uint256,bytes)")[0:4]
+        // reclaim(uint256 lockId)
+        // selector: keccak256("reclaim(uint256)")[0:4]
+        // locks(uint256) → returns struct
+
+        // Compute selectors (keccak256 of signature, first 4 bytes)
+        const { keccak_256 } = await import("@noble/hashes/sha3.js");
+        const { sha256 }     = await import("@noble/hashes/sha2.js");
+        const { bytesToHex, hexToBytes } = await import("@noble/hashes/utils.js");
+
+        function selector(sig: string): string {
+          return "0x" + bytesToHex(keccak_256(new TextEncoder().encode(sig))).slice(0, 8);
+        }
+
+        function padLeft(hex: string, bytes: number): string {
+          return hex.replace("0x", "").padStart(bytes * 2, "0");
+        }
+
+        function encodeUint256(n: bigint | number): string {
+          return BigInt(n).toString(16).padStart(64, "0");
+        }
+
+        function encodeAddress(addr: string): string {
+          return addr.replace("0x", "").toLowerCase().padStart(64, "0");
+        }
+
+        function encodeBytes32(hex: string): string {
+          return hex.replace("0x", "").padStart(64, "0");
+        }
+
+        // ── action: commitment ───────────────────────────────────────────────
+        if (action === "commitment") {
+          if (!preimage) throw new Error("preimage required for commitment action (32 bytes hex, 64 chars)");
+          const cleanPre = preimage.replace("0x", "");
+          if (cleanPre.length !== 64) throw new Error(`preimage must be 32 bytes (64 hex chars), got ${cleanPre.length}`);
+          const preimageBytes = hexToBytes(cleanPre);
+          const sha256Hash    = "0x" + bytesToHex(sha256(preimageBytes));
+          const keccakHash    = "0x" + bytesToHex(keccak_256(preimageBytes));
+          return createJsonResponse({
+            action: "commitment",
+            preimage:    "0x" + cleanPre,
+            sha256Hash,   // → use for Stacks whale-pact-v1 (hash-lock, proofType=HASH)
+            keccakHash,   // → use for Arbitrum PactCrossChain.create()
+            stacksNote:  "Use sha256Hash as the hash in whale-pact-v1 create-pact (proofType=0, HASH)",
+            arbNote:     "Use BOTH keccakHash and sha256Hash in PactCrossChain.create()",
+            securityNote:"Generate preimage with cryptographically secure randomness. Never reuse.",
+            contract:    PACT_EVM_ADDR,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        // ── action: create ───────────────────────────────────────────────────
+        if (action === "create") {
+          if (!beneficiary) throw new Error("beneficiary required for create");
+          if (!amountWei)   throw new Error("amountWei required for create");
+          if (!deadlineTs)  throw new Error("deadlineTs required for create");
+          if (!preimage)    throw new Error("preimage required for create (to derive hashes)");
+          const cleanPre = preimage.replace("0x", "");
+          if (cleanPre.length !== 64) throw new Error("preimage must be 64 hex chars");
+          const preimageBytes = hexToBytes(cleanPre);
+          const sha256Hash    = bytesToHex(sha256(preimageBytes));
+          const keccakHash    = bytesToHex(keccak_256(preimageBytes));
+
+          const sel = selector("create(address,uint256,uint256,bytes32,bytes32)");
+          const calldata = sel +
+            encodeAddress(beneficiary) +
+            encodeUint256(BigInt(amountWei)) +
+            encodeUint256(BigInt(deadlineTs)) +
+            encodeBytes32(keccakHash) +
+            encodeBytes32(sha256Hash);
+
+          return createJsonResponse({
+            action:      "create",
+            contract:    PACT_EVM_ADDR,
+            chainId:     ARB_CHAIN_ID,
+            network:     "Arbitrum One",
+            calldata,
+            params: {
+              beneficiary,
+              amountWei,
+              deadline:   new Date(deadlineTs * 1000).toISOString(),
+              keccakHash: "0x" + keccakHash,
+              sha256Hash: "0x" + sha256Hash,
+            },
+            stacksCounterpart: {
+              contract:     `${PACT_ADDR}.${PACT_NAME}`,
+              functionName: "create-pact",
+              hashArg:      "0x" + sha256Hash,
+              proofType:    0,
+              note:         "Create Stacks pact with same sha256Hash (proofType=0/HASH). Same preimage settles both.",
+            },
+            note: "Call this on Arbitrum before revealing preimage anywhere. Locks PACT for beneficiary.",
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        // ── action: release ──────────────────────────────────────────────────
+        if (action === "release") {
+          if (lockId === undefined) throw new Error("lockId required for release");
+          if (!preimage)            throw new Error("preimage required for release");
+          const cleanPre = preimage.replace("0x", "");
+          if (cleanPre.length !== 64) throw new Error("preimage must be 64 hex chars");
+
+          // ABI encode: release(uint256, bytes) — dynamic bytes
+          // Layout: selector | uint256 lockId | offset(64) | length(32) | data(32 padded)
+          const sel = selector("release(uint256,bytes)");
+          const offsetBytes = "0000000000000000000000000000000000000000000000000000000000000040"; // 64 decimal
+          const dataLen     = "0000000000000000000000000000000000000000000000000000000000000020"; // 32 bytes
+          const calldata    = sel +
+            encodeUint256(lockId) +
+            offsetBytes +
+            dataLen +
+            encodeBytes32(cleanPre);
+
+          // Also compute expected hashes for verification
+          const preimageBytes = hexToBytes(cleanPre);
+          const sha256Hash    = "0x" + bytesToHex(sha256(preimageBytes));
+          const keccakHash    = "0x" + bytesToHex(keccak_256(preimageBytes));
+
+          return createJsonResponse({
+            action:   "release",
+            lockId,
+            contract: PACT_EVM_ADDR,
+            chainId:  ARB_CHAIN_ID,
+            network:  "Arbitrum One",
+            calldata,
+            hashes: { sha256Hash, keccakHash },
+            note:     "Anyone can call release with the correct preimage. PACT goes to beneficiary.",
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        // ── action: reclaim ──────────────────────────────────────────────────
+        if (action === "reclaim") {
+          if (lockId === undefined) throw new Error("lockId required for reclaim");
+          const sel      = selector("reclaim(uint256)");
+          const calldata = sel + encodeUint256(lockId);
+          return createJsonResponse({
+            action:   "reclaim",
+            lockId,
+            contract: PACT_EVM_ADDR,
+            chainId:  ARB_CHAIN_ID,
+            network:  "Arbitrum One",
+            calldata,
+            note:     "Creator recovers PACT after deadline if preimage was never revealed. Requires deadline passed.",
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        // ── action: lookup ───────────────────────────────────────────────────
+        if (action === "lookup") {
+          if (lockId === undefined) throw new Error("lockId required for lookup");
+          // locks(uint256) public getter
+          const sel      = selector("locks(uint256)");
+          const calldata = sel + encodeUint256(lockId);
+
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+          let lockState: any = { error: "rpc_unavailable" };
+          try {
+            const rpcRes = await fetch(ARB_RPC, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                jsonrpc: "2.0",
+                id:      1,
+                method:  "eth_call",
+                params: [{ to: PACT_EVM_ADDR, data: calldata }, "latest"],
+              }),
+              signal: controller.signal,
+            });
+            clearTimeout(timer);
+            if (rpcRes.ok) {
+              const j = await rpcRes.json() as any;
+              if (j.result && j.result !== "0x") {
+                // Decode result: creator(address), beneficiary(address), amount(uint256),
+                //                deadline(uint256), keccakHash(bytes32), sha256Hash(bytes32),
+                //                released(bool), reclaimed(bool)
+                const d = j.result.replace("0x", "");
+                const word = (n: number) => d.slice(n * 64, (n + 1) * 64);
+                lockState = {
+                  creator:     "0x" + word(0).slice(24),
+                  beneficiary: "0x" + word(1).slice(24),
+                  amount:      BigInt("0x" + word(2)).toString(),
+                  deadline:    new Date(Number("0x" + word(3)) * 1000).toISOString(),
+                  keccakHash:  "0x" + word(4),
+                  sha256Hash:  "0x" + word(5),
+                  released:    word(6) !== "0".repeat(64),
+                  reclaimed:   word(7) !== "0".repeat(64),
+                  raw:         j.result,
+                };
+              } else {
+                lockState = { error: "lock_not_found_or_zero_result", lockId };
+              }
+            }
+          } catch { clearTimeout(timer); }
+
+          return createJsonResponse({
+            action:   "lookup",
+            lockId,
+            lockState,
+            contract: PACT_EVM_ADDR,
+            chainId:  ARB_CHAIN_ID,
+            network:  "Arbitrum One",
+            rpc:      ARB_RPC,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        throw new Error(`Unknown action: ${action}`);
       } catch (error) {
         return createErrorResponse(error);
       }
