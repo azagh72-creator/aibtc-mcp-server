@@ -104,6 +104,7 @@ import { ipiGetAuditLog, ipiIsCoordinatedAttack, ipiSanitize, IPI_ATTACK_PHRASES
 
 const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
 const EXEC_URL  = "https://whale-execution-engine-production.up.railway.app";
+const OPS_URL   = "https://fw-beat-match-engine-production.up.railway.app"; // Operations Hub v2.0.0
 const TIMEOUT_MS = 15_000;
 
 // ─── License Gate ─────────────────────────────────────────────────────────────
@@ -550,17 +551,17 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ---------- Intelligence — Agent tier ----------
+  // ---------- Marketplace Recent Intelligence — Agent tier ----------
 
   server.registerTool(
-    "flying_whale_get_intelligence",
+    "flying_whale_get_marketplace_intel",
     {
       description:
-        "Get intelligence reports and market analytics from Flying Whale Sovereign Agent OS " +
+        "Get recent marketplace intelligence from Flying Whale Sovereign Agent OS " +
         "(COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
-        "Returns trend data, skill performance metrics, WHALE pool analytics, and on-chain insights. " +
+        "Returns skill trend data, performance metrics, WHALE pool analytics, and on-chain insights. " +
         "WHALE gate enforced — Agent tier (1,000 WHALE) required. " +
-        "Execution API: https://whale-execution-api-production.up.railway.app",
+        "For sovereign intelligence signals (quantum/macro/security beats), use flying_whale_get_intelligence instead.",
       inputSchema: {
         callerAddress: z
           .string()
@@ -2497,6 +2498,140 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         }
 
         return createJsonResponse({ error: "Unknown action" });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FLYING WHALE INTELLIGENCE HUB — Sovereign intelligence, no editors, no caps
+  // Operations Hub v2.0.0 — https://fw-beat-match-engine-production.up.railway.app
+  // 5 beats: quantum-threats | agent-economy | sovereign-stack | bitcoin-macro | network-security
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  server.registerTool(
+    "flying_whale_get_intelligence",
+    {
+      description:
+        "Get sovereign intelligence signals from Flying Whale Intelligence Hub " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
+        "5 exclusive beats not covered by aibtc.news: quantum-threats (secp256k1 exposure, PQC), " +
+        "agent-economy (x402 flows, MCP economics), sovereign-stack (Stacks contracts, whale infra), " +
+        "bitcoin-macro (Wyckoff regime, ETF flows), network-security (IPI patterns, exploits). " +
+        "No editors. No caps. No cooldowns. Signals published by zaghmout.btc with on-chain IP proof. " +
+        "Use beat='latest' for free preview (3 per beat). Licensed access required for full feed. " +
+        "Operations Hub: https://fw-beat-match-engine-production.up.railway.app",
+      inputSchema: {
+        beat: z
+          .enum(["latest", "quantum-threats", "agent-economy", "sovereign-stack", "bitcoin-macro", "network-security", "feed", "brief"])
+          .describe(
+            "Which intelligence to fetch: " +
+            "'latest' = free preview (3 newest per beat), " +
+            "'quantum-threats' | 'agent-economy' | 'sovereign-stack' | 'bitcoin-macro' | 'network-security' = specific beat, " +
+            "'feed' = full chronological feed (licensed), " +
+            "'brief' = today's compiled brief (licensed)"
+          ),
+        limit: z
+          .number()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe("Max signals to return (default: 10, max: 50). Applies to beat-specific queries."),
+        date: z
+          .string()
+          .optional()
+          .describe("Date for brief compilation (YYYY-MM-DD). Only used when beat='brief'."),
+      },
+    },
+    async ({ beat, limit, date }) => {
+      assertLicensed();
+      try {
+        const headers: Record<string, string> = {
+          "X-Fw-License": FW_LICENSE_KEY || "OWNER",
+          "X-Fw-Caller":  FW_OWNER_ADDRESS,
+          "User-Agent":   "FlyingWhale-MCP/2.0.0",
+        };
+
+        let url: string;
+        if (beat === "latest") {
+          url = `${OPS_URL}/intelligence/latest`;
+        } else if (beat === "feed") {
+          const params = new URLSearchParams();
+          if (limit) params.set("limit", String(limit));
+          url = `${OPS_URL}/intelligence/feed?${params}`;
+        } else if (beat === "brief") {
+          const params = new URLSearchParams();
+          if (date) params.set("date", date);
+          url = `${OPS_URL}/intelligence/brief?${params}`;
+        } else {
+          const params = new URLSearchParams();
+          if (limit) params.set("limit", String(limit));
+          url = `${OPS_URL}/intelligence/${beat}?${params}`;
+        }
+
+        const res = await fetch(url, {
+          headers,
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        const data = await res.json() as Record<string, unknown>;
+
+        if (res.status === 402) {
+          return createJsonResponse({
+            error:       "Payment required — subscribe for full intelligence access",
+            amount_sats: data.amount_sats,
+            pay_to_btc:  "bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p",
+            pay_to_stx:  FW_OWNER_ADDRESS,
+            hint:        "Set FW_LICENSE_KEY to gain full access, or use beat='latest' for free preview.",
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        return createJsonResponse({
+          ...data,
+          _ops_hub:    "Flying Whale Operations Hub v2.0.0",
+          _beat_query: beat,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_get_brief",
+    {
+      description:
+        "Get Flying Whale daily intelligence brief — compiled summary of all 5 sovereign beats for a given date. " +
+        "Returns signal count, beat breakdown, and compiled insights. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
+        "Licensed access required.",
+      inputSchema: {
+        date: z
+          .string()
+          .optional()
+          .describe("Date to compile brief for (YYYY-MM-DD). Defaults to today."),
+      },
+    },
+    async ({ date }) => {
+      assertLicensed();
+      try {
+        const params = new URLSearchParams();
+        if (date) params.set("date", date);
+
+        const res = await fetch(`${OPS_URL}/intelligence/brief?${params}`, {
+          headers: {
+            "X-Fw-License": FW_LICENSE_KEY || "OWNER",
+            "X-Fw-Caller":  FW_OWNER_ADDRESS,
+            "User-Agent":   "FlyingWhale-MCP/2.0.0",
+          },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        const data = await res.json() as Record<string, unknown>;
+        return createJsonResponse({ ...data as object, ...SOVEREIGNTY_STAMP });
       } catch (error) {
         return createErrorResponse(error);
       }
