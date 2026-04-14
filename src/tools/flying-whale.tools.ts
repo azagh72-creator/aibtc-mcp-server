@@ -98,7 +98,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createJsonResponse, createErrorResponse } from "../utils/index.js";
-import { principalCV, serializeCV, stringAsciiCV, uintCV } from "@stacks/transactions";
+import { principalCV, serializeCV, stringAsciiCV, uintCV, deserializeCV, cvToJSON, ClarityType } from "@stacks/transactions";
 import { ipiGetAuditLog, ipiIsCoordinatedAttack, ipiSanitize, IPI_ATTACK_PHRASES, unblockSession } from "./session-guard.js";
 
 const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
@@ -132,8 +132,9 @@ const SOVEREIGNTY_STAMP = {
   _owner_btc:      "bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p",
   _owner_eth:      "0xEAb576Ea7fd0c81eEb28f41783496a238C9Eb1Cf",
   _owner_sol:      "A8pFQ94ZAaENBGEEsa9udjM2cv6XTuXY9cwA5HUdJcfG",
-  _stack:          "Sovereign Agent OS v3.0.0 — 10-Layer Bitcoin AI Stack",
-  _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution",
+  _stack:          "Sovereign Agent OS v3.1.0 — 11-Layer Bitcoin AI Stack",
+  _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution|pact",
+  _pact_layer:     "whale-pact-v1 — Autonomous Financial Contract Layer | HASH/ORACLE/HYBRID/CHAIN | TX 83f5d6f1...",
   _whale_token:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3 | 12.6M supply",
   _whale_gate:     "Scout 100 | Agent 1K | Elite 10K | Council score≥300. Buy: app.bitflow.finance Pool#42",
   _ip_registry:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1 — 11 hashes registered",
@@ -2452,6 +2453,629 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         }
 
         return createJsonResponse({ error: "Unknown action" });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ============================================================================
+  // whale-pact-v1 — Autonomous Financial Contract Layer
+  // COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54
+  // Deploy TX: 83f5d6f18871c937ce9feae80b196bda179654fd6cf5fb7f8b69452483281f22
+  // IP TX v1.1: 209544b6fa13a50834b641018604e1c84761deef16a43b52c7d6570ac56b2a22
+  //
+  // Four proof tiers:
+  //   HASH   (u0) 1.00% fee  1 STX min  — sha256(preimage) on-chain
+  //   ORACLE (u1) 1.50% fee  5 STX min  — verifier attests quality
+  //   HYBRID (u2) 2.00% fee  10 STX min — hash AND oracle, both required
+  //   CHAIN  (u3) 0.75% fee  5 STX min  — stx-get-balance IS the proof
+  // ============================================================================
+
+  const PACT_ADDR = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+  const PACT_NAME = "whale-pact-v1";
+
+  const PROOF_TIERS = {
+    HASH:   { id: 0, feeBps: 100,  minStx: 1,  desc: "sha256(preimage) verified on-chain. TX id, commit SHA, deploy hash." },
+    ORACLE: { id: 1, feeBps: 150,  minStx: 5,  desc: "Designated verifier attests quality. AI analysis, subjective work." },
+    HYBRID: { id: 2, feeBps: 200,  minStx: 10, desc: "hash AND oracle both required. Strongest traditional settlement." },
+    CHAIN:  { id: 3, feeBps: 75,   minStx: 5,  desc: "stx-get-balance IS the proof. Permissionless. Zero humans." },
+  } as const;
+
+  type ProofTierKey = keyof typeof PROOF_TIERS;
+
+  const STATE_NAMES: Record<number, string> = { 0: "OPEN", 1: "RELEASED", 2: "DISPUTED", 3: "REFUNDED" };
+
+  async function pactCallRead(fnName: string, args: string[]): Promise<any> {
+    const res = await fetch(
+      `${HIRO_API}/v2/contracts/call-read/${PACT_ADDR}/${PACT_NAME}/${fnName}`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body:    JSON.stringify({ sender: PACT_ADDR, arguments: args }),
+        signal:  AbortSignal.timeout(TIMEOUT_MS),
+      }
+    );
+    if (!res.ok) throw new Error(`Hiro call-read failed: ${res.status} ${res.statusText}`);
+    return res.json() as Promise<{ okay: boolean; result: string; cause?: string }>;
+  }
+
+  function decodePactState(resultHex: string): Record<string, any> | null {
+    try {
+      const cv  = deserializeCV(resultHex);
+      const raw = cvToJSON(cv) as any;
+      if (raw === null || raw === undefined) return null;
+      // OptionalNone
+      if (raw.type === "none" || raw === "(none)") return null;
+      const d = raw.value ?? raw;
+      const num = (v: any) => typeof v === "string" ? parseInt(v, 10) : Number(v);
+      return {
+        hirer:       d.hirer?.value ?? d.hirer,
+        worker:      d.worker?.value ?? d.worker,
+        amountStx:   num(d.amount?.value ?? d.amount) / 1_000_000,
+        feeStx:      num(d.fee?.value ?? d.fee) / 1_000_000,
+        proofType:   num(d["proof-type"]?.value ?? d["proof-type"]),
+        proofName:   (["HASH","ORACLE","HYBRID","CHAIN"] as const)[num(d["proof-type"]?.value ?? d["proof-type"])] ?? "UNKNOWN",
+        deadline:    num(d.deadline?.value ?? d.deadline),
+        state:       num(d.state?.value ?? d.state),
+        stateName:   STATE_NAMES[num(d.state?.value ?? d.state)] ?? "UNKNOWN",
+        hashValid:   d["hash-valid"]?.value ?? d["hash-valid"],
+        oracleValid: d["oracle-valid"]?.value ?? d["oracle-valid"],
+        verifier:    d.verifier?.value?.value ?? null,
+        chainTarget: d["chain-target"]?.value?.value != null
+          ? num(d["chain-target"].value.value) / 1_000_000 : null,
+      };
+    } catch {
+      return { raw: resultHex };
+    }
+  }
+
+  // ── 1. flying_whale_pact_preview_fee ─────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_preview_fee",
+    {
+      title: "Flying Whale — Pact Fee Preview",
+      description:
+        "Preview the fee and total STX to lock for a whale-pact-v1 pact. " +
+        "Shows fee rate, minimum amount, and exact amounts for any proof tier. " +
+        "No WHALE gate — use this before create to plan the transaction. " +
+        "Proof types: HASH (1%) | ORACLE (1.5%) | HYBRID (2%) | CHAIN (0.75%)",
+      inputSchema: z.object({
+        amountStx: z.number().positive()
+          .describe("Pact amount in STX (e.g. 100 for 100 STX)"),
+        proofType: z.enum(["HASH", "ORACLE", "HYBRID", "CHAIN"])
+          .describe("Settlement tier: HASH=sha256 | ORACLE=verifier | HYBRID=both | CHAIN=balance"),
+      }),
+    },
+    async ({ amountStx, proofType }) => {
+      try {
+        const tier = PROOF_TIERS[proofType];
+        const amountUstx  = Math.round(amountStx * 1_000_000);
+        const feeUstx     = Math.floor(amountUstx * tier.feeBps / 10_000);
+        const totalUstx   = amountUstx + feeUstx;
+        const minUstx     = tier.minStx * 1_000_000;
+
+        if (amountUstx < minUstx) {
+          return createJsonResponse({
+            valid:    false,
+            error:    `Amount too low. ${proofType} tier minimum: ${tier.minStx} STX (you provided ${amountStx} STX)`,
+            minimum:  `${tier.minStx} STX`,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        return createJsonResponse({
+          valid:        true,
+          proofType,
+          description:  tier.desc,
+          amount:       `${amountStx} STX`,
+          fee:          `${(feeUstx / 1_000_000).toFixed(6)} STX (${tier.feeBps / 100}%)`,
+          totalToLock:  `${(totalUstx / 1_000_000).toFixed(6)} STX`,
+          amountUstx,
+          feeUstx,
+          totalUstx,
+          contract:     `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 2. flying_whale_pact_get ──────────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_get",
+    {
+      title: "Flying Whale — Get Pact State",
+      description:
+        "Read full state of a whale-pact-v1 pact from Stacks mainnet. " +
+        "Returns hirer, worker, amount, fee, proof type, deadline, state (OPEN/RELEASED/DISPUTED/REFUNDED), " +
+        "and verification flags. Live on-chain data. " +
+        "WHALE gate: Scout tier (100 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("Pact ID (uint) — returned by create-pact"),
+      }),
+    },
+    async ({ callerAddress, pactId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+        const raw = await pactCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        if (!raw.okay) throw new Error(`Contract error: ${raw.cause ?? raw.result}`);
+
+        const pact = decodePactState(raw.result);
+        if (!pact) {
+          return createJsonResponse({ found: false, pactId, message: "Pact not found", ...SOVEREIGNTY_STAMP });
+        }
+
+        return createJsonResponse({
+          found:    true,
+          pactId,
+          pact,
+          explorer: `https://explorer.hiro.so/txid/${PACT_ADDR}.${PACT_NAME}?chain=mainnet`,
+          contract: `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 3. flying_whale_pact_check ────────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_check",
+    {
+      title: "Flying Whale — Check Pact Release Condition",
+      description:
+        "Check whether a whale-pact-v1 pact is ready to release without executing. " +
+        "For CHAIN type: reads live stx-get-balance vs chain-target on-chain. " +
+        "Returns ready=true/false, reason, and which settlement function to call next. " +
+        "WHALE gate: Scout tier (100 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("Pact ID to check"),
+      }),
+    },
+    async ({ callerAddress, pactId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+
+        const [rawCheck, rawPact] = await Promise.all([
+          pactCallRead("check-release", [serializeCV(uintCV(pactId))]),
+          pactCallRead("get-pact",      [serializeCV(uintCV(pactId))]),
+        ]);
+
+        if (!rawPact.okay) throw new Error(`Pact not found: ${rawPact.cause ?? rawPact.result}`);
+        const pact = decodePactState(rawPact.result);
+        if (!pact) return createJsonResponse({ found: false, pactId, ...SOVEREIGNTY_STAMP });
+
+        let ready = false;
+        try {
+          const cv  = deserializeCV(rawCheck.result);
+          const val = cvToJSON(cv) as any;
+          // (ok true) or (ok false) from check-release
+          const inner = val?.value ?? val;
+          ready = inner === true || inner?.value === true;
+        } catch { /* keep false */ }
+
+        const nextAction =
+          pact.stateName !== "OPEN"        ? `Pact is ${pact.stateName} — no action needed` :
+          pact.proofType === 3 && ready    ? "Call flying_whale_pact_settle_chain — permissionless, anyone can trigger" :
+          pact.proofType === 0 && !ready   ? "Worker calls flying_whale_pact_submit_proof with sha256 preimage" :
+          pact.proofType === 1 && !ready   ? "Verifier calls flying_whale_pact_attest" :
+          pact.proofType === 2 && !pact.hashValid  ? "Worker submits proof first (flying_whale_pact_submit_proof)" :
+          pact.proofType === 2 && !pact.oracleValid ? "Verifier attests (flying_whale_pact_attest)" :
+          ready ? "Ready to release" : "Awaiting conditions";
+
+        return createJsonResponse({
+          pactId,
+          ready,
+          proofType:  pact.proofName,
+          state:      pact.stateName,
+          hashValid:  pact.hashValid,
+          oracleValid: pact.oracleValid,
+          nextAction,
+          contract:   `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 4. flying_whale_pact_create ───────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_create",
+    {
+      title: "Flying Whale — Create Pact",
+      description:
+        "Prepare a whale-pact-v1 create-pact transaction. " +
+        "Returns the exact call_contract parameters to lock STX + fee in escrow. " +
+        "Validates inputs, calculates fee, and checks minimums before returning. " +
+        "Execute the returned callContract params with the call_contract MCP tool. " +
+        "WHALE gate: Agent tier (1,000 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        worker: z.string().min(1).describe("Worker's Stacks address (SP...) — who receives payment on success"),
+        amountStx: z.number().positive().describe("Pact amount in STX (excluding fee)"),
+        workHash: z.string().length(64).describe("sha256 hex of the preimage (32 bytes = 64 hex chars). For CHAIN type: use 0000...0000"),
+        proofType: z.enum(["HASH", "ORACLE", "HYBRID", "CHAIN"])
+          .describe("Settlement tier"),
+        deadlineBlocks: z.number().int().positive()
+          .describe("Deadline in Stacks blocks from now (144 blocks ≈ 1 day, 1008 ≈ 1 week)"),
+        verifier: z.string().optional()
+          .describe("Verifier Stacks address — required for ORACLE and HYBRID types"),
+        chainTargetStx: z.number().optional()
+          .describe("Required for CHAIN type — absolute STX balance worker must reach (e.g. 60 if worker needs to go from 50→60 STX)"),
+        expectedHash: z.string().length(64).optional()
+          .describe("Optional sha256 hex of expected output — for HYBRID type verifier reference"),
+      }),
+    },
+    async ({ callerAddress, worker, amountStx, workHash, proofType, deadlineBlocks, verifier, chainTargetStx, expectedHash }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const tier        = PROOF_TIERS[proofType];
+        const amountUstx  = Math.round(amountStx * 1_000_000);
+        const feeUstx     = Math.floor(amountUstx * tier.feeBps / 10_000);
+        const totalUstx   = amountUstx + feeUstx;
+        const minUstx     = tier.minStx * 1_000_000;
+
+        if (amountUstx < minUstx)
+          throw new Error(`Amount too low. ${proofType} minimum: ${tier.minStx} STX`);
+        if ((proofType === "ORACLE" || proofType === "HYBRID") && !verifier)
+          throw new Error(`${proofType} requires a verifier address`);
+        if (proofType === "CHAIN" && !chainTargetStx)
+          throw new Error("CHAIN type requires chainTargetStx — the absolute STX balance worker must reach");
+        if (workHash.length !== 64)
+          throw new Error("workHash must be 64 hex chars (sha256 = 32 bytes)");
+
+        const functionArgs = [
+          { type: "principal",       value: worker },
+          { type: "uint",            value: amountUstx },
+          { type: "buffer",          value: workHash },
+          expectedHash
+            ? { type: "some", value: { type: "buffer", value: expectedHash } }
+            : { type: "none" },
+          chainTargetStx
+            ? { type: "some", value: { type: "uint", value: Math.round(chainTargetStx * 1_000_000) } }
+            : { type: "none" },
+          { type: "uint",            value: tier.id },
+          verifier
+            ? { type: "some", value: { type: "principal", value: verifier } }
+            : { type: "none" },
+          { type: "uint",            value: deadlineBlocks },
+        ];
+
+        return createJsonResponse({
+          ready: true,
+          summary: {
+            hirer:      callerAddress,
+            worker,
+            proofType,
+            description: tier.desc,
+            amount:     `${amountStx} STX`,
+            fee:        `${(feeUstx / 1_000_000).toFixed(6)} STX (${tier.feeBps / 100}%)`,
+            totalLocked: `${(totalUstx / 1_000_000).toFixed(6)} STX`,
+            deadline:   `${deadlineBlocks} blocks (~${Math.round(deadlineBlocks / 144)} days)`,
+            verifier:   verifier ?? null,
+            chainTarget: chainTargetStx ? `${chainTargetStx} STX` : null,
+          },
+          callContract: {
+            contractAddress: PACT_ADDR,
+            contractName:    PACT_NAME,
+            functionName:    "create-pact",
+            functionArgs,
+            postConditions: [
+              { type: "stx", principal: callerAddress, conditionCode: "eq", amount: String(totalUstx) },
+            ],
+          },
+          instruction: "Pass callContract params to call_contract MCP tool to broadcast",
+          contract: `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 5. flying_whale_pact_submit_proof ─────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_submit_proof",
+    {
+      title: "Flying Whale — Submit Proof (Worker)",
+      description:
+        "Prepare a submit-proof transaction for HASH or HYBRID pacts. " +
+        "Worker reveals the sha256 preimage — contract verifies on-chain. " +
+        "If hash matches and conditions are met, STX is auto-released to worker. " +
+        "Returns exact call_contract parameters to broadcast. " +
+        "WHALE gate: Agent tier (1,000 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("Pact ID to submit proof for"),
+        preimage: z.string().min(1)
+          .describe("The preimage whose sha256 matches the work-hash committed at pact creation (hex string, max 512 hex chars = 256 bytes)"),
+      }),
+    },
+    async ({ callerAddress, pactId, preimage }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const raw = await pactCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        if (!raw.okay) throw new Error(`Pact not found`);
+        const pact = decodePactState(raw.result);
+        if (!pact) throw new Error(`Pact #${pactId} not found`);
+        if (pact.stateName !== "OPEN") throw new Error(`Pact is ${pact.stateName} — cannot submit proof`);
+        if (pact.proofType !== 0 && pact.proofType !== 2)
+          throw new Error(`Pact is ${pact.proofName} type — submit-proof only valid for HASH and HYBRID`);
+
+        return createJsonResponse({
+          ready: true,
+          pactId,
+          proofType:    pact.proofName,
+          worker:       pact.worker,
+          amountStx:    pact.amountStx,
+          callContract: {
+            contractAddress: PACT_ADDR,
+            contractName:    PACT_NAME,
+            functionName:    "submit-proof",
+            functionArgs:    [
+              { type: "uint",   value: pactId },
+              { type: "buffer", value: preimage },
+            ],
+            postConditions: [],
+          },
+          instruction: "Pass callContract params to call_contract MCP tool to broadcast. Only worker address can call this.",
+          contract: `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 6. flying_whale_pact_attest ───────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_attest",
+    {
+      title: "Flying Whale — Attest (Verifier)",
+      description:
+        "Prepare an attest transaction for ORACLE or HYBRID pacts. " +
+        "Verifier approves or rejects work. valid=true releases funds (if all conditions met). " +
+        "valid=false enters DISPUTED state for owner arbitration. " +
+        "Returns exact call_contract parameters. " +
+        "WHALE gate: Agent tier (1,000 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("Pact ID to attest"),
+        valid: z.boolean().describe("true = work approved, release funds | false = work rejected, enter dispute"),
+      }),
+    },
+    async ({ callerAddress, pactId, valid }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const raw = await pactCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        if (!raw.okay) throw new Error(`Pact not found`);
+        const pact = decodePactState(raw.result);
+        if (!pact) throw new Error(`Pact #${pactId} not found`);
+        if (pact.stateName !== "OPEN") throw new Error(`Pact is ${pact.stateName} — cannot attest`);
+        if (pact.proofType !== 1 && pact.proofType !== 2)
+          throw new Error(`Pact is ${pact.proofName} — attest only valid for ORACLE and HYBRID`);
+
+        return createJsonResponse({
+          ready: true,
+          pactId,
+          proofType:   pact.proofName,
+          verdict:     valid ? "APPROVE — funds will release if all conditions met" : "REJECT — pact enters DISPUTED state",
+          callContract: {
+            contractAddress: PACT_ADDR,
+            contractName:    PACT_NAME,
+            functionName:    "attest",
+            functionArgs:    [
+              { type: "uint", value: pactId },
+              { type: "bool", value: valid },
+            ],
+            postConditions: [],
+          },
+          instruction: "Only the designated verifier address can call this.",
+          contract: `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 7. flying_whale_pact_settle_chain ─────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_settle_chain",
+    {
+      title: "Flying Whale — Settle Chain (Permissionless)",
+      description:
+        "Check and trigger settlement for CHAIN-type pacts. " +
+        "Reads worker's live STX balance from chain state. " +
+        "If balance >= chain-target: returns ready=true with call_contract params to trigger auto-release. " +
+        "If not yet: returns balance vs target gap. Anyone can call settle-chain — permissionless. " +
+        "This is the ceiling of trustless settlement: Capital → Execution → Chain verifies → Release. " +
+        "WHALE gate: Scout tier (100 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("CHAIN-type pact ID to settle"),
+      }),
+    },
+    async ({ callerAddress, pactId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+
+        const raw = await pactCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        if (!raw.okay) throw new Error(`Pact not found`);
+        const pact = decodePactState(raw.result);
+        if (!pact) throw new Error(`Pact #${pactId} not found`);
+        if (pact.proofType !== 3) throw new Error(`Pact is ${pact.proofName} type — settle-chain only for CHAIN type`);
+        if (pact.stateName !== "OPEN") throw new Error(`Pact is ${pact.stateName} — already settled`);
+
+        // Read live worker balance
+        const balRes = await fetch(
+          `${HIRO_API}/extended/v1/address/${pact.worker}/balances`,
+          { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) }
+        );
+        const balData = await balRes.json() as { stx?: { balance: string } };
+        const workerBalUstx  = BigInt(balData.stx?.balance ?? "0");
+        const targetUstx     = BigInt(Math.round((pact.chainTarget ?? 0) * 1_000_000));
+        const workerBalStx   = Number(workerBalUstx) / 1_000_000;
+        const targetStx      = pact.chainTarget ?? 0;
+        const ready          = workerBalUstx >= targetUstx;
+
+        return createJsonResponse({
+          pactId,
+          ready,
+          worker:         pact.worker,
+          workerBalance:  `${workerBalStx.toFixed(6)} STX`,
+          chainTarget:    `${targetStx} STX`,
+          gap:            ready ? "0 STX" : `${(targetStx - workerBalStx).toFixed(6)} STX remaining`,
+          amountToRelease: `${pact.amountStx} STX`,
+          ...(ready ? {
+            callContract: {
+              contractAddress: PACT_ADDR,
+              contractName:    PACT_NAME,
+              functionName:    "settle-chain",
+              functionArgs:    [{ type: "uint", value: pactId }],
+              postConditions:  [],
+            },
+            instruction: "Permissionless — any address can broadcast this. Pass to call_contract.",
+          } : {
+            instruction: `Worker needs ${(targetStx - workerBalStx).toFixed(6)} more STX. Check back later.`,
+          }),
+          mechanism: "Capital -> Execution -> Chain verifies -> Release. Zero humans. Zero oracle.",
+          contract: `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 8. flying_whale_pact_refund ───────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_refund",
+    {
+      title: "Flying Whale — Pact Refund (Hirer)",
+      description:
+        "Prepare a refund transaction after a pact's deadline has passed. " +
+        "Only callable by the original hirer. Pact must be in OPEN state past deadline. " +
+        "Returns exact call_contract parameters. Reads current block height to check deadline. " +
+        "WHALE gate: Scout tier (100 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("Pact ID to refund"),
+      }),
+    },
+    async ({ callerAddress, pactId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "scout");
+
+        const [rawPact, blockRes] = await Promise.all([
+          pactCallRead("get-pact", [serializeCV(uintCV(pactId))]),
+          fetch(`${HIRO_API}/extended/v1/block?limit=1`, {
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          }),
+        ]);
+
+        if (!rawPact.okay) throw new Error(`Pact not found`);
+        const pact = decodePactState(rawPact.result);
+        if (!pact) throw new Error(`Pact #${pactId} not found`);
+        if (pact.stateName !== "OPEN") throw new Error(`Pact is ${pact.stateName} — cannot refund`);
+
+        const blockData  = await blockRes.json() as { results?: Array<{ height: number }> };
+        const blockHeight = blockData.results?.[0]?.height ?? 0;
+        const pastDeadline = blockHeight >= pact.deadline;
+
+        return createJsonResponse({
+          pactId,
+          canRefund:      pastDeadline,
+          currentBlock:   blockHeight,
+          deadline:       pact.deadline,
+          blocksRemaining: pastDeadline ? 0 : pact.deadline - blockHeight,
+          amountToRefund: `${(pact.amountStx + pact.feeStx).toFixed(6)} STX`,
+          ...(pastDeadline ? {
+            callContract: {
+              contractAddress: PACT_ADDR,
+              contractName:    PACT_NAME,
+              functionName:    "refund",
+              functionArgs:    [{ type: "uint", value: pactId }],
+              postConditions:  [],
+            },
+            instruction: "Only the original hirer can call this. Pass to call_contract.",
+          } : {
+            instruction: `Deadline not reached. Wait ${pact.deadline - blockHeight} more blocks (~${Math.round((pact.deadline - blockHeight) / 144)} days).`,
+          }),
+          contract: `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 9. flying_whale_pact_resolve ──────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_pact_resolve",
+    {
+      title: "Flying Whale — Resolve Dispute (Owner)",
+      description:
+        "Prepare a resolve-dispute transaction for DISPUTED pacts. " +
+        "Owner only — zaghmout.btc arbitrates and decides in favor of worker or hirer. " +
+        "favor=true: worker delivered, release funds. favor=false: work invalid, refund hirer. " +
+        "Returns exact call_contract parameters. " +
+        "WHALE gate: Agent tier (1,000 WHALE).",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("Disputed pact ID to resolve"),
+        favorWorker: z.boolean()
+          .describe("true = worker wins, release payment | false = hirer wins, full refund"),
+      }),
+    },
+    async ({ callerAddress, pactId, favorWorker }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const raw = await pactCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        if (!raw.okay) throw new Error(`Pact not found`);
+        const pact = decodePactState(raw.result);
+        if (!pact) throw new Error(`Pact #${pactId} not found`);
+        if (pact.stateName !== "DISPUTED") throw new Error(`Pact is ${pact.stateName} — resolve only for DISPUTED pacts`);
+
+        return createJsonResponse({
+          ready: true,
+          pactId,
+          verdict:       favorWorker ? "WORKER WINS — payment released" : "HIRER WINS — full refund",
+          hirer:         pact.hirer,
+          worker:        pact.worker,
+          amountAtStake: `${pact.amountStx} STX`,
+          callContract: {
+            contractAddress: PACT_ADDR,
+            contractName:    PACT_NAME,
+            functionName:    "resolve-dispute",
+            functionArgs:    [
+              { type: "uint", value: pactId },
+              { type: "bool", value: favorWorker },
+            ],
+            postConditions: [],
+          },
+          instruction: "Only SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW (zaghmout.btc) can call this.",
+          contract: `${PACT_ADDR}.${PACT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
       } catch (error) {
         return createErrorResponse(error);
       }
