@@ -1,7 +1,7 @@
 {
   "name": "flying-whale-mcp-server",
-  "version": "1.55.0",
-  "description": "Flying Whale Sovereign Agent OS — Bitcoin-native MCP server: 29 WHALE-gated tools, Execution Sovereign Layer (CoW matching + arb gateway), ERC-8004 cross-chain identity, CVE-2026-2819 ECDSA audit, BTC/STX wallets, DeFi yield, sBTC peg, NFTs, x402 payments.",
+  "version": "1.56.0",
+  "description": "Flying Whale v2.0 — Infrastructure Layer for sovereign agent economies. Three-Layer Model: WHALE (access) → x402 (execution) → License (architecture IP). 29 WHALE-gated tools, ERC-8004 cross-chain identity, BTC/STX/sBTC wallets, DeFi yield, Operations Hub, Work Market Engine.",
   "mcpName": "io.flyingwhale/mcp-server",
   "type": "module",
   "main": "dist/index.js",
