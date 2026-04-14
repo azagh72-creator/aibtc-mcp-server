@@ -1,6 +1,6 @@
 {
   "name": "@aibtc/mcp-server",
-  "version": "1.57.0",
+  "version": "1.57.1",
   "description": "Flying Whale v2.0 — Infrastructure Layer for sovereign agent economies. Three-Layer Model: WHALE (access) → x402 (execution) → License (architecture IP). 74 WHALE-gated tools including Autonomous Financial Contract Layer (36 pact tools: whale-pact-v1, program, market, sovereign governance, cross-chain Stacks↔Arbitrum), ERC-8004 cross-chain identity, BTC/STX/sBTC wallets, DeFi yield, Operations Hub, Work Market Engine.",
   "mcpName": "io.flyingwhale/mcp-server",
   "type": "module",
