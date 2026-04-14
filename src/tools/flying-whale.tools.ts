@@ -132,17 +132,20 @@ const SOVEREIGNTY_STAMP = {
   _owner_btc:      "bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p",
   _owner_eth:      "0xEAb576Ea7fd0c81eEb28f41783496a238C9Eb1Cf",
   _owner_sol:      "A8pFQ94ZAaENBGEEsa9udjM2cv6XTuXY9cwA5HUdJcfG",
-  _stack:          "Sovereign Agent OS v3.1.0 — 11-Layer Bitcoin AI Stack",
-  _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution|pact",
-  _pact_layer:     "whale-pact-v1 — Autonomous Financial Contract Layer | HASH/ORACLE/HYBRID/CHAIN | TX 83f5d6f1...",
+  _stack:          "Sovereign Agent OS v3.2.0 — 12-Layer Bitcoin AI Stack",
+  _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution|pact|market|sovereign",
+  _pact_v1:        "whale-pact-v1 — Autonomous Financial Contract | TX 83f5d6f1...",
+  _pact_v2:        "whale-pact-v2 — Program Layer (Sequential) | TX c9654182...",
+  _pact_v3:        "whale-pact-v3 — Market Layer (Open Bounty) | TX 073ccd55...",
+  _pact_v4:        "whale-pact-v4 — Sovereign Layer (DAO+Treasury+Dual-Chain) | TX 78ede889...",
   _whale_token:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3 | 12.6M supply",
   _whale_gate:     "Scout 100 | Agent 1K | Elite 10K | Council score≥300. Buy: app.bitflow.finance Pool#42",
-  _ip_registry:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1 — 11 hashes registered",
+  _ip_registry:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1 — 15 hashes registered",
   _audit_trail:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1",
   _execution:      "whale-execution-v1 block 7537670 — first CoW engine on Stacks",
   _economy:        "x402 payments → whale-treasury-v1 buyback → WHALE burn → price support",
   _ipi_defense:    "IPI Defense v2 active — coordinated attack detection + sanitize mode",
-  _mcp_version:    "aibtc-mcp-server v1.53.0 | @aibtc/mcp-server on npm",
+  _mcp_version:    "aibtc-mcp-server v1.53.1 | @aibtc/mcp-server on npm",
 } as const;
 
 // ============================================================================
@@ -3076,6 +3079,1396 @@ export function registerFlyingWhaleTools(server: McpServer): void {
           contract: `${PACT_ADDR}.${PACT_NAME}`,
           ...SOVEREIGNTY_STAMP,
         });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ============================================================================
+  // whale-pact-v2 — Program Layer (Chained Sequential Pacts)
+  // COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54
+  // Deploy TX: c965418280f9f3927b200dc8804f6cce6d805d4f9a17cf26cf8fc23ad4f7a71d
+  // IP TX: 85308f618725ac2709cd5640140868fddaaa7cfdd10164143cde7ea38f1001c2
+  //
+  // A Program = ordered sequence of up to 10 pacts funded atomically.
+  // Each pact completion unlocks the next. ERR-NOT-NEXT enforces order.
+  // One hirer, N workers, one deadline governing the entire program.
+  // ============================================================================
+
+  const PROG_ADDR = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+  const PROG_NAME = "whale-pact-v2";
+  const PROG_STATE: Record<number, string> = { 0: "ACTIVE", 1: "COMPLETE", 2: "ABORTED" };
+  const PROG_PACT_STATE: Record<number, string> = { 0: "OPEN", 1: "RELEASED", 2: "DISPUTED", 3: "REFUNDED" };
+
+  async function progCallRead(fnName: string, args: string[]): Promise<any> {
+    const res = await fetch(
+      `${HIRO_API}/v2/contracts/call-read/${PROG_ADDR}/${PROG_NAME}/${fnName}`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body:    JSON.stringify({ sender: PROG_ADDR, arguments: args }),
+        signal:  AbortSignal.timeout(TIMEOUT_MS),
+      }
+    );
+    if (!res.ok) throw new Error(`Hiro call-read failed: ${res.status} ${res.statusText}`);
+    return res.json() as Promise<{ okay: boolean; result: string; cause?: string }>;
+  }
+
+  function decodeProgram(hex: string): Record<string, any> | null {
+    try {
+      const cv  = deserializeCV(hex);
+      const raw = cvToJSON(cv) as any;
+      if (!raw || raw.type === "none") return null;
+      const d = raw.value ?? raw;
+      const num = (v: any) => typeof v === "string" ? parseInt(v, 10) : Number(v);
+      return {
+        hirer:       d.hirer?.value ?? d.hirer,
+        totalPacts:  num(d["total-pacts"]?.value ?? d["total-pacts"]),
+        completed:   num(d.completed?.value ?? d.completed),
+        totalLocked: num(d["total-locked"]?.value ?? d["total-locked"]) / 1_000_000,
+        deadline:    num(d.deadline?.value ?? d.deadline),
+        state:       num(d.state?.value ?? d.state),
+        stateName:   PROG_STATE[num(d.state?.value ?? d.state)] ?? "UNKNOWN",
+      };
+    } catch { return { raw: hex }; }
+  }
+
+  function decodeProgPact(hex: string): Record<string, any> | null {
+    try {
+      const cv  = deserializeCV(hex);
+      const raw = cvToJSON(cv) as any;
+      if (!raw || raw.type === "none") return null;
+      const d = raw.value ?? raw;
+      const num = (v: any) => typeof v === "string" ? parseInt(v, 10) : Number(v);
+      return {
+        pactId:      num(d["pact-id"]?.value ?? d["pact-id"]),
+        worker:      d.worker?.value ?? d.worker,
+        amountStx:   num(d.amount?.value ?? d.amount) / 1_000_000,
+        feeStx:      num(d.fee?.value ?? d.fee) / 1_000_000,
+        proofType:   num(d["proof-type"]?.value ?? d["proof-type"]),
+        proofName:   (["HASH","ORACLE","HYBRID","CHAIN"] as const)[num(d["proof-type"]?.value ?? d["proof-type"])] ?? "UNKNOWN",
+        state:       num(d.state?.value ?? d.state),
+        stateName:   PROG_PACT_STATE[num(d.state?.value ?? d.state)] ?? "UNKNOWN",
+        hashValid:   d["hash-valid"]?.value ?? d["hash-valid"],
+        oracleValid: d["oracle-valid"]?.value ?? d["oracle-valid"],
+        chainTarget: d["chain-target"]?.value?.value != null
+          ? num(d["chain-target"].value.value) / 1_000_000 : null,
+      };
+    } catch { return { raw: hex }; }
+  }
+
+  // ── 1. flying_whale_program_get ──────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_program_get",
+    {
+      title: "Flying Whale — Program Get",
+      description:
+        "Read a whale-pact-v2 Program header and optionally a specific pact within it. " +
+        "Shows program state (ACTIVE/COMPLETE/ABORTED), completion progress, total locked, and deadline. " +
+        "Pass pactIndex (0-based) to also fetch that pact's state.",
+      inputSchema: z.object({
+        programId: z.number().int().positive().describe("Program ID to fetch"),
+        pactIndex: z.number().int().min(0).optional()
+          .describe("Optional 0-based index of specific pact within the program"),
+      }),
+    },
+    async ({ programId, pactIndex }) => {
+      try {
+        const raw = await progCallRead("get-program", [serializeCV(uintCV(programId))]);
+        if (!raw.okay) throw new Error(`Program #${programId} not found`);
+        const prog = decodeProgram(raw.result);
+        if (!prog) throw new Error(`Program #${programId} not found`);
+
+        let pactData: Record<string, any> | null = null;
+        if (pactIndex !== undefined) {
+          const rawP = await progCallRead("get-program-pact", [
+            serializeCV(uintCV(programId)),
+            serializeCV(uintCV(pactIndex)),
+          ]);
+          if (rawP.okay) pactData = decodeProgPact(rawP.result);
+        }
+
+        return createJsonResponse({
+          programId,
+          ...prog,
+          pact: pactData,
+          contract: `${PROG_ADDR}.${PROG_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 2. flying_whale_program_create ───────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_program_create",
+    {
+      title: "Flying Whale — Create Program",
+      description:
+        "Create a whale-pact-v2 sequential program with 2 or 3 pacts funded atomically. " +
+        "Each pact must complete before the next unlocks (ERR-NOT-NEXT enforces order). " +
+        "One deadline governs the entire program. Requires WHALE agent access. " +
+        "Calls create-program-2 or create-program-3 based on pacts array length.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pacts: z.array(z.object({
+          worker:         z.string().describe("Worker principal (SP...)"),
+          amountStx:      z.number().positive().describe("Pact amount in STX"),
+          workHashHex:    z.string().length(64).describe("32-byte work hash as hex (sha256 of preimage)"),
+          proofType:      z.enum(["HASH","ORACLE","HYBRID","CHAIN"]).describe("Proof tier"),
+          verifier:       z.string().optional().describe("Verifier principal for ORACLE/HYBRID"),
+          chainTargetStx: z.number().optional().describe("STX balance target for CHAIN type"),
+        })).min(2).max(3).describe("Array of 2 or 3 pacts in execution order"),
+        deadlineBlocks: z.number().int().positive().describe("Blocks until program deadline (~10min per 144 blocks)"),
+      }),
+    },
+    async ({ callerAddress, pacts: pactsArg, deadlineBlocks }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const n = pactsArg.length;
+        const fnName = n === 2 ? "create-program-2" : "create-program-3";
+
+        // Build callContract args for each pact
+        const pactArgs = pactsArg.map((p, i) => {
+          const amountUstx  = Math.round(p.amountStx * 1_000_000);
+          const feeBps      = { HASH: 100, ORACLE: 150, HYBRID: 200, CHAIN: 75 }[p.proofType]!;
+          const feeUstx     = Math.floor(amountUstx * feeBps / 10_000);
+          const proofId     = { HASH: 0, ORACLE: 1, HYBRID: 2, CHAIN: 3 }[p.proofType]!;
+          return {
+            index:       i,
+            worker:      p.worker,
+            amountStx:   p.amountStx,
+            feeStx:      feeUstx / 1_000_000,
+            totalStx:    (amountUstx + feeUstx) / 1_000_000,
+            proofType:   p.proofType,
+            proofId,
+            workHashHex: p.workHashHex,
+            verifier:    p.verifier ?? null,
+          };
+        });
+
+        const totalLocked = pactArgs.reduce((s, p) => s + p.totalStx, 0);
+
+        return createJsonResponse({
+          ready:          true,
+          programPacts:   n,
+          totalLockedStx: totalLocked,
+          pactSummary:    pactArgs,
+          callContract: {
+            contractAddress: PROG_ADDR,
+            contractName:    PROG_NAME,
+            functionName:    fnName,
+            note: "Build function args using pactSummary above. Each pact needs: (worker principal), (amount uint), (work-hash buff 32), (chain-target optional uint), (proof-type uint), (verifier optional principal). Plus deadline-blocks uint at end.",
+          },
+          deadlineBlocks,
+          contract: `${PROG_ADDR}.${PROG_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 3. flying_whale_program_submit_proof ─────────────────────────────────────
+  server.registerTool(
+    "flying_whale_program_submit_proof",
+    {
+      title: "Flying Whale — Program Submit Proof",
+      description:
+        "Submit hash proof for a whale-pact-v2 program pact. " +
+        "Only the next incomplete pact in the sequence can be settled. " +
+        "ERR-NOT-NEXT (u15) is returned if pact is not the current active one. " +
+        "SHA-256 of preimage is verified on-chain — if valid, pact releases and next unlocks.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        programId:  z.number().int().positive().describe("Program ID"),
+        pactIndex:  z.number().int().min(0).describe("0-based index of the pact to settle"),
+        preimageHex: z.string().describe("Preimage as hex string (sha256 must match work-hash)"),
+      }),
+    },
+    async ({ callerAddress, programId, pactIndex, preimageHex }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const rawP = await progCallRead("get-program-pact", [
+          serializeCV(uintCV(programId)),
+          serializeCV(uintCV(pactIndex)),
+        ]);
+        if (!rawP.okay) throw new Error(`Pact not found`);
+        const pact = decodeProgPact(rawP.result);
+        if (!pact) throw new Error(`Program pact #${programId}[${pactIndex}] not found`);
+
+        return createJsonResponse({
+          ready:      true,
+          programId,
+          pactIndex,
+          pact,
+          callContract: {
+            contractAddress: PROG_ADDR,
+            contractName:    PROG_NAME,
+            functionName:    "submit-program-proof",
+            functionArgs: [
+              { type: "uint", value: programId },
+              { type: "uint", value: pactIndex },
+              { type: "buffer", hex: preimageHex },
+            ],
+          },
+          contract: `${PROG_ADDR}.${PROG_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 4. flying_whale_program_attest ───────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_program_attest",
+    {
+      title: "Flying Whale — Program Attest",
+      description:
+        "Verifier attests a whale-pact-v2 program pact (ORACLE or HYBRID). " +
+        "valid=true releases payment and unlocks next pact. valid=false marks DISPUTED.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        programId: z.number().int().positive().describe("Program ID"),
+        pactIndex: z.number().int().min(0).describe("0-based pact index"),
+        valid:     z.boolean().describe("true = approve and release | false = dispute"),
+      }),
+    },
+    async ({ callerAddress, programId, pactIndex, valid }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        return createJsonResponse({
+          ready: true,
+          programId, pactIndex, valid,
+          callContract: {
+            contractAddress: PROG_ADDR,
+            contractName:    PROG_NAME,
+            functionName:    "attest-program-pact",
+            functionArgs: [
+              { type: "uint", value: programId },
+              { type: "uint", value: pactIndex },
+              { type: "bool", value: valid },
+            ],
+          },
+          contract: `${PROG_ADDR}.${PROG_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 5. flying_whale_program_settle_chain ─────────────────────────────────────
+  server.registerTool(
+    "flying_whale_program_settle_chain",
+    {
+      title: "Flying Whale — Program Settle Chain",
+      description:
+        "Permissionless chain settlement for a whale-pact-v2 CHAIN-type program pact. " +
+        "Checks worker STX balance on-chain — if >= chain-target, releases and advances program.",
+      inputSchema: z.object({
+        programId: z.number().int().positive().describe("Program ID"),
+        pactIndex: z.number().int().min(0).describe("0-based pact index"),
+      }),
+    },
+    async ({ programId, pactIndex }) => {
+      try {
+        return createJsonResponse({
+          ready: true,
+          programId, pactIndex,
+          callContract: {
+            contractAddress: PROG_ADDR,
+            contractName:    PROG_NAME,
+            functionName:    "settle-program-chain",
+            functionArgs: [
+              { type: "uint", value: programId },
+              { type: "uint", value: pactIndex },
+            ],
+          },
+          contract: `${PROG_ADDR}.${PROG_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 6. flying_whale_program_abort ────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_program_abort",
+    {
+      title: "Flying Whale — Abort Program",
+      description:
+        "Hirer aborts a whale-pact-v2 program after deadline. " +
+        "Refunds all remaining locked STX (unreleased pacts) back to hirer. " +
+        "Only callable by the program hirer after deadline.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        programId: z.number().int().positive().describe("Program ID to abort"),
+      }),
+    },
+    async ({ callerAddress, programId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const raw = await progCallRead("get-program", [serializeCV(uintCV(programId))]);
+        const prog = raw.okay ? decodeProgram(raw.result) : null;
+
+        return createJsonResponse({
+          ready:      true,
+          programId,
+          program:    prog,
+          callContract: {
+            contractAddress: PROG_ADDR,
+            contractName:    PROG_NAME,
+            functionName:    "abort-program",
+            functionArgs: [{ type: "uint", value: programId }],
+          },
+          contract: `${PROG_ADDR}.${PROG_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 7. flying_whale_program_resolve ──────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_program_resolve",
+    {
+      title: "Flying Whale — Resolve Program Dispute",
+      description:
+        "CONTRACT-OWNER resolves a disputed pact in a whale-pact-v2 program. " +
+        "favor-worker=true releases to worker and advances program. " +
+        "favor-worker=false refunds hirer and marks pact REFUNDED.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        programId:   z.number().int().positive().describe("Program ID"),
+        pactIndex:   z.number().int().min(0).describe("0-based disputed pact index"),
+        favorWorker: z.boolean().describe("true = pay worker | false = refund hirer"),
+      }),
+    },
+    async ({ callerAddress, programId, pactIndex, favorWorker }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        return createJsonResponse({
+          ready: true,
+          programId, pactIndex, favorWorker,
+          callContract: {
+            contractAddress: PROG_ADDR,
+            contractName:    PROG_NAME,
+            functionName:    "resolve-program-dispute",
+            functionArgs: [
+              { type: "uint",  value: programId },
+              { type: "uint",  value: pactIndex },
+              { type: "bool",  value: favorWorker },
+            ],
+          },
+          instruction: "Only SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW (zaghmout.btc) can call this.",
+          contract: `${PROG_ADDR}.${PROG_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ============================================================================
+  // whale-pact-v3 — Market Layer (Competitive Open Bounty Settlement)
+  // COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54
+  // Deploy TX: 073ccd5598c8dc61087781c282535be961944a36d44fd2a94a4928bb2fd186be
+  // IP TX: c746a985d258212decc85676063a38da067fba7bb07439434155330d85208d51
+  //
+  // Open bounty model: any worker can claim and compete to win reward.
+  // STATUS: OPEN(u0) | CLAIMED(u1) | WON(u2) | EXPIRED(u3) | DISPUTED(u4)
+  // CHAIN type = permissionless, no claim required.
+  // ============================================================================
+
+  const MKT_ADDR = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+  const MKT_NAME = "whale-pact-v3";
+  const MKT_STATUS: Record<number, string> = { 0: "OPEN", 1: "CLAIMED", 2: "WON", 3: "EXPIRED", 4: "DISPUTED" };
+
+  async function mktCallRead(fnName: string, args: string[]): Promise<any> {
+    const res = await fetch(
+      `${HIRO_API}/v2/contracts/call-read/${MKT_ADDR}/${MKT_NAME}/${fnName}`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body:    JSON.stringify({ sender: MKT_ADDR, arguments: args }),
+        signal:  AbortSignal.timeout(TIMEOUT_MS),
+      }
+    );
+    if (!res.ok) throw new Error(`Hiro call-read failed: ${res.status} ${res.statusText}`);
+    return res.json() as Promise<{ okay: boolean; result: string; cause?: string }>;
+  }
+
+  function decodeListing(hex: string): Record<string, any> | null {
+    try {
+      const cv  = deserializeCV(hex);
+      const raw = cvToJSON(cv) as any;
+      if (!raw || raw.type === "none") return null;
+      const d = raw.value ?? raw;
+      const num = (v: any) => typeof v === "string" ? parseInt(v, 10) : Number(v);
+      return {
+        poster:      d.poster?.value ?? d.poster,
+        rewardStx:   num(d.reward?.value ?? d.reward) / 1_000_000,
+        feeStx:      num(d.fee?.value ?? d.fee) / 1_000_000,
+        proofType:   num(d["proof-type"]?.value ?? d["proof-type"]),
+        proofName:   (["HASH","ORACLE","HYBRID","CHAIN"] as const)[num(d["proof-type"]?.value ?? d["proof-type"])] ?? "UNKNOWN",
+        deadline:    num(d.deadline?.value ?? d.deadline),
+        status:      num(d.status?.value ?? d.status),
+        statusName:  MKT_STATUS[num(d.status?.value ?? d.status)] ?? "UNKNOWN",
+        claimant:    d.claimant?.value?.value ?? null,
+        hashValid:   d["hash-valid"]?.value ?? d["hash-valid"],
+        oracleValid: d["oracle-valid"]?.value ?? d["oracle-valid"],
+        chainTarget: d["chain-target"]?.value?.value != null
+          ? num(d["chain-target"].value.value) / 1_000_000 : null,
+        verifier:    d.verifier?.value?.value ?? null,
+      };
+    } catch { return { raw: hex }; }
+  }
+
+  // ── 1. flying_whale_market_get ───────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_market_get",
+    {
+      title: "Flying Whale — Market Get Listing",
+      description:
+        "Read a whale-pact-v3 market listing. Shows open bounty details: reward, fee, " +
+        "proof type, status, claimant, and deadline. Any address can post or view listings.",
+      inputSchema: z.object({
+        listingId: z.number().int().positive().describe("Listing ID to fetch"),
+      }),
+    },
+    async ({ listingId }) => {
+      try {
+        const raw = await mktCallRead("get-listing", [serializeCV(uintCV(listingId))]);
+        if (!raw.okay) throw new Error(`Listing #${listingId} not found`);
+        const listing = decodeListing(raw.result);
+        if (!listing) throw new Error(`Listing #${listingId} not found`);
+
+        return createJsonResponse({
+          listingId,
+          ...listing,
+          contract: `${MKT_ADDR}.${MKT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 2. flying_whale_market_post ──────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_market_post",
+    {
+      title: "Flying Whale — Post Market Listing",
+      description:
+        "Post an open bounty on whale-pact-v3. Any worker can claim and compete to win. " +
+        "HASH type: first to reveal valid preimage wins. " +
+        "ORACLE: verifier picks best submission. " +
+        "CHAIN: first address whose STX balance reaches chain-target wins (permissionless). " +
+        "Reward + fee locked in escrow at post time. Requires WHALE agent access.",
+      inputSchema: z.object({
+        callerAddress:  z.string().min(1).describe(CALLER_DESC),
+        rewardStx:      z.number().positive().describe("Reward for winner in STX"),
+        workHashHex:    z.string().length(64).describe("32-byte work hash as hex (sha256 of deliverable)"),
+        proofType:      z.enum(["HASH","ORACLE","HYBRID","CHAIN"]).describe("Settlement type"),
+        deadlineBlocks: z.number().int().positive().describe("Blocks until listing expires"),
+        verifier:       z.string().optional().describe("Verifier principal (required for ORACLE/HYBRID)"),
+        chainTargetStx: z.number().optional().describe("STX balance target for CHAIN type"),
+      }),
+    },
+    async ({ callerAddress, rewardStx, workHashHex, proofType, deadlineBlocks, verifier, chainTargetStx }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const feeBps    = { HASH: 100, ORACLE: 150, HYBRID: 200, CHAIN: 75 }[proofType]!;
+        const proofId   = { HASH: 0, ORACLE: 1, HYBRID: 2, CHAIN: 3 }[proofType]!;
+        const rewardUstx = Math.round(rewardStx * 1_000_000);
+        const feeUstx    = Math.floor(rewardUstx * feeBps / 10_000);
+
+        return createJsonResponse({
+          ready:          true,
+          rewardStx,
+          feeStx:         feeUstx / 1_000_000,
+          totalLockedStx: (rewardUstx + feeUstx) / 1_000_000,
+          proofType,
+          feePct:         `${feeBps / 100}%`,
+          callContract: {
+            contractAddress: MKT_ADDR,
+            contractName:    MKT_NAME,
+            functionName:    "post-listing",
+            note: `Args: (reward uint ${rewardUstx}), (work-hash buff 32 0x${workHashHex}), (chain-target optional uint), (proof-type uint ${proofId}), (verifier optional principal), (deadline-blocks uint ${deadlineBlocks})`,
+          },
+          contract: `${MKT_ADDR}.${MKT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 3. flying_whale_market_claim ─────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_market_claim",
+    {
+      title: "Flying Whale — Claim Market Listing",
+      description:
+        "Claim an OPEN listing on whale-pact-v3. Locks the listing to one worker at a time. " +
+        "CHAIN type listings cannot be claimed — they are settled permissionlessly. " +
+        "Once claimed, only the claimant can submit proof before deadline.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        listingId: z.number().int().positive().describe("Listing ID to claim"),
+      }),
+    },
+    async ({ callerAddress, listingId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const raw = await mktCallRead("get-listing", [serializeCV(uintCV(listingId))]);
+        const listing = raw.okay ? decodeListing(raw.result) : null;
+
+        return createJsonResponse({
+          ready: true,
+          listingId,
+          listing,
+          callContract: {
+            contractAddress: MKT_ADDR,
+            contractName:    MKT_NAME,
+            functionName:    "claim-listing",
+            functionArgs: [{ type: "uint", value: listingId }],
+          },
+          contract: `${MKT_ADDR}.${MKT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 4. flying_whale_market_submit_proof ──────────────────────────────────────
+  server.registerTool(
+    "flying_whale_market_submit_proof",
+    {
+      title: "Flying Whale — Market Submit Proof",
+      description:
+        "Submit hash proof for a CLAIMED whale-pact-v3 listing (HASH or HYBRID). " +
+        "SHA-256 of preimage verified on-chain. If valid (and oracle also valid for HYBRID), " +
+        "winner is paid immediately.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        listingId:   z.number().int().positive().describe("Listing ID"),
+        preimageHex: z.string().describe("Preimage as hex string"),
+      }),
+    },
+    async ({ callerAddress, listingId, preimageHex }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const raw = await mktCallRead("get-listing", [serializeCV(uintCV(listingId))]);
+        const listing = raw.okay ? decodeListing(raw.result) : null;
+
+        return createJsonResponse({
+          ready: true,
+          listingId,
+          listing,
+          callContract: {
+            contractAddress: MKT_ADDR,
+            contractName:    MKT_NAME,
+            functionName:    "submit-market-proof",
+            functionArgs: [
+              { type: "uint",   value: listingId },
+              { type: "buffer", hex: preimageHex },
+            ],
+          },
+          contract: `${MKT_ADDR}.${MKT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 5. flying_whale_market_attest ────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_market_attest",
+    {
+      title: "Flying Whale — Market Attest",
+      description:
+        "Verifier attests a whale-pact-v3 ORACLE or HYBRID listing. " +
+        "valid=true pays the claimant. valid=false marks listing DISPUTED for owner resolution.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        listingId: z.number().int().positive().describe("Listing ID"),
+        valid:     z.boolean().describe("true = approve and pay | false = dispute"),
+      }),
+    },
+    async ({ callerAddress, listingId, valid }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        return createJsonResponse({
+          ready: true,
+          listingId, valid,
+          callContract: {
+            contractAddress: MKT_ADDR,
+            contractName:    MKT_NAME,
+            functionName:    "attest-market",
+            functionArgs: [
+              { type: "uint", value: listingId },
+              { type: "bool", value: valid },
+            ],
+          },
+          contract: `${MKT_ADDR}.${MKT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 6. flying_whale_market_settle_chain ──────────────────────────────────────
+  server.registerTool(
+    "flying_whale_market_settle_chain",
+    {
+      title: "Flying Whale — Market Settle Chain",
+      description:
+        "Permissionless CHAIN settlement for a whale-pact-v3 listing. " +
+        "Anyone can call — first address whose STX balance >= chain-target wins the reward. " +
+        "No claim step needed for CHAIN type.",
+      inputSchema: z.object({
+        listingId:     z.number().int().positive().describe("Listing ID"),
+        claimantAddr:  z.string().describe("Address to check and potentially pay (must have >= chain-target STX)"),
+      }),
+    },
+    async ({ listingId, claimantAddr }) => {
+      try {
+        const raw = await mktCallRead("get-listing", [serializeCV(uintCV(listingId))]);
+        const listing = raw.okay ? decodeListing(raw.result) : null;
+
+        return createJsonResponse({
+          ready: true,
+          listingId,
+          claimantAddr,
+          chainTarget:  listing?.chainTarget ?? null,
+          listing,
+          callContract: {
+            contractAddress: MKT_ADDR,
+            contractName:    MKT_NAME,
+            functionName:    "settle-market-chain",
+            functionArgs: [
+              { type: "uint",      value: listingId },
+              { type: "principal", value: claimantAddr },
+            ],
+          },
+          contract: `${MKT_ADDR}.${MKT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 7. flying_whale_market_expire ────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_market_expire",
+    {
+      title: "Flying Whale — Expire Market Listing",
+      description:
+        "Poster reclaims reward + fee after deadline if listing is OPEN or CLAIMED but abandoned. " +
+        "Only the original poster can call this after the deadline block.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        listingId: z.number().int().positive().describe("Listing ID to expire and refund"),
+      }),
+    },
+    async ({ callerAddress, listingId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const raw = await mktCallRead("get-listing", [serializeCV(uintCV(listingId))]);
+        const listing = raw.okay ? decodeListing(raw.result) : null;
+
+        return createJsonResponse({
+          ready: true,
+          listingId,
+          listing,
+          callContract: {
+            contractAddress: MKT_ADDR,
+            contractName:    MKT_NAME,
+            functionName:    "expire-listing",
+            functionArgs: [{ type: "uint", value: listingId }],
+          },
+          contract: `${MKT_ADDR}.${MKT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 8. flying_whale_market_resolve ───────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_market_resolve",
+    {
+      title: "Flying Whale — Resolve Market Dispute",
+      description:
+        "CONTRACT-OWNER resolves a DISPUTED whale-pact-v3 listing. " +
+        "favor-claimant=true pays the claimant. favor-claimant=false refunds the poster.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        listingId:     z.number().int().positive().describe("Listing ID in DISPUTED state"),
+        favorClaimant: z.boolean().describe("true = pay claimant | false = refund poster"),
+      }),
+    },
+    async ({ callerAddress, listingId, favorClaimant }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const raw = await mktCallRead("get-listing", [serializeCV(uintCV(listingId))]);
+        const listing = raw.okay ? decodeListing(raw.result) : null;
+        if (listing && listing.statusName !== "DISPUTED")
+          throw new Error(`Listing is ${listing.statusName} — resolve only for DISPUTED listings`);
+
+        return createJsonResponse({
+          ready: true,
+          listingId,
+          favorClaimant,
+          listing,
+          callContract: {
+            contractAddress: MKT_ADDR,
+            contractName:    MKT_NAME,
+            functionName:    "resolve-market-dispute",
+            functionArgs: [
+              { type: "uint", value: listingId },
+              { type: "bool", value: favorClaimant },
+            ],
+          },
+          instruction: "Only SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW (zaghmout.btc) can call this.",
+          contract: `${MKT_ADDR}.${MKT_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ============================================================================
+  // whale-pact-v4 — Sovereign Layer (DAO + Treasury + Dual-Chain Proof)
+  // COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54
+  // Deploy TX: 78ede8896b62f0012b28b972aac1ae668b3257f4a99a7832d03ac0b9f0ed38e1
+  // IP TX: 208a0583fcba04c7165907e8281c97de2f87f28e6ac11f935eca8d90671bfd4b
+  //
+  // Apex settlement layer:
+  //   SOVEREIGN proof (u4): STX balance AND WHALE balance both verified on-chain.
+  //   Fees route to whale-treasury-v1 for buyback (no accumulation in contract).
+  //   WHALE-weighted governance: propose/vote/execute fee tier changes.
+  //   Keeper earns 0.10% incentive for triggering sovereign settlement.
+  // ============================================================================
+
+  const SOV_ADDR = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+  const SOV_NAME = "whale-pact-v4";
+  const SOV_STATE: Record<number, string> = { 0: "OPEN", 1: "RELEASED", 2: "DISPUTED", 3: "REFUNDED" };
+  const SOV_PROOF: Record<number, string> = { 0: "HASH", 1: "ORACLE", 2: "HYBRID", 3: "CHAIN", 4: "SOVEREIGN" };
+
+  async function sovCallRead(fnName: string, args: string[]): Promise<any> {
+    const res = await fetch(
+      `${HIRO_API}/v2/contracts/call-read/${SOV_ADDR}/${SOV_NAME}/${fnName}`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body:    JSON.stringify({ sender: SOV_ADDR, arguments: args }),
+        signal:  AbortSignal.timeout(TIMEOUT_MS),
+      }
+    );
+    if (!res.ok) throw new Error(`Hiro call-read failed: ${res.status} ${res.statusText}`);
+    return res.json() as Promise<{ okay: boolean; result: string; cause?: string }>;
+  }
+
+  function decodeSovPact(hex: string): Record<string, any> | null {
+    try {
+      const cv  = deserializeCV(hex);
+      const raw = cvToJSON(cv) as any;
+      if (!raw || raw.type === "none") return null;
+      const d = raw.value ?? raw;
+      const num = (v: any) => typeof v === "string" ? parseInt(v, 10) : Number(v);
+      return {
+        hirer:        d.hirer?.value ?? d.hirer,
+        worker:       d.worker?.value ?? d.worker,
+        amountStx:    num(d.amount?.value ?? d.amount) / 1_000_000,
+        feeStx:       num(d.fee?.value ?? d.fee) / 1_000_000,
+        proofType:    num(d["proof-type"]?.value ?? d["proof-type"]),
+        proofName:    SOV_PROOF[num(d["proof-type"]?.value ?? d["proof-type"])] ?? "UNKNOWN",
+        deadline:     num(d.deadline?.value ?? d.deadline),
+        state:        num(d.state?.value ?? d.state),
+        stateName:    SOV_STATE[num(d.state?.value ?? d.state)] ?? "UNKNOWN",
+        hashValid:    d["hash-valid"]?.value ?? d["hash-valid"],
+        oracleValid:  d["oracle-valid"]?.value ?? d["oracle-valid"],
+        verifier:     d.verifier?.value?.value ?? null,
+        chainTarget:  d["chain-target"]?.value?.value != null
+          ? num(d["chain-target"].value.value) / 1_000_000 : null,
+        whaleTarget:  d["whale-target"]?.value?.value != null
+          ? num(d["whale-target"].value.value) / 1_000_000 : null,
+      };
+    } catch { return { raw: hex }; }
+  }
+
+  // ── 1. flying_whale_sovereign_get ────────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_get",
+    {
+      title: "Flying Whale — Sovereign Get Pact",
+      description:
+        "Read a whale-pact-v4 sovereign pact. Shows all fields including whale-target " +
+        "for SOVEREIGN type. Use flying_whale_sovereign_check to verify dual-chain conditions.",
+      inputSchema: z.object({
+        pactId: z.number().int().positive().describe("Sovereign pact ID"),
+      }),
+    },
+    async ({ pactId }) => {
+      try {
+        const raw = await sovCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        if (!raw.okay) throw new Error(`Pact #${pactId} not found`);
+        const pact = decodeSovPact(raw.result);
+        if (!pact) throw new Error(`Sovereign pact #${pactId} not found`);
+
+        return createJsonResponse({
+          pactId,
+          ...pact,
+          isSovereign: pact.proofType === 4,
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 2. flying_whale_sovereign_preview ────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_preview",
+    {
+      title: "Flying Whale — Sovereign Fee Preview",
+      description:
+        "Preview fees for a whale-pact-v4 pact. Shows governance-set fee BPS for all proof tiers. " +
+        "SOVEREIGN type has 0.50% fee and routes ALL fees to whale-treasury-v1 for buyback.",
+      inputSchema: z.object({
+        amountStx: z.number().positive().describe("Pact amount in STX"),
+        proofType: z.enum(["HASH","ORACLE","HYBRID","CHAIN","SOVEREIGN"])
+          .describe("HASH(1%) | ORACLE(1.5%) | HYBRID(2%) | CHAIN(0.75%) | SOVEREIGN(0.5%)"),
+      }),
+    },
+    async ({ amountStx, proofType }) => {
+      try {
+        // Fetch live fees from governance vars
+        const rawFees = await sovCallRead("get-fees", []);
+        let feeBps = { HASH: 100, ORACLE: 150, HYBRID: 200, CHAIN: 75, SOVEREIGN: 50 }[proofType]!;
+        if (rawFees.okay) {
+          try {
+            const fv = cvToJSON(deserializeCV(rawFees.result)) as any;
+            const fv2 = fv.value ?? fv;
+            const num = (v: any) => typeof v === "string" ? parseInt(v, 10) : Number(v);
+            const liveMap: Record<string, number> = {
+              HASH:      num(fv2.hash?.value      ?? fv2.hash),
+              ORACLE:    num(fv2.oracle?.value    ?? fv2.oracle),
+              HYBRID:    num(fv2.hybrid?.value    ?? fv2.hybrid),
+              CHAIN:     num(fv2.chain?.value     ?? fv2.chain),
+              SOVEREIGN: num(fv2.sovereign?.value ?? fv2.sovereign),
+            };
+            feeBps = liveMap[proofType] ?? feeBps;
+          } catch { /* use defaults */ }
+        }
+
+        const amountUstx = Math.round(amountStx * 1_000_000);
+        const feeUstx    = Math.floor(amountUstx * feeBps / 10_000);
+        const minStx     = { HASH: 1, ORACLE: 5, HYBRID: 10, CHAIN: 5, SOVEREIGN: 10 }[proofType]!;
+
+        return createJsonResponse({
+          proofType,
+          amountStx,
+          feeStx:         feeUstx / 1_000_000,
+          feePct:         `${feeBps / 100}%`,
+          totalLockedStx: (amountUstx + feeUstx) / 1_000_000,
+          minStx,
+          valid:          amountStx >= minStx,
+          feeDestination: "whale-treasury-v1 (buyback engine)",
+          keeperBps:      proofType === "SOVEREIGN" ? 10 : 0,
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 3. flying_whale_sovereign_create ─────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_create",
+    {
+      title: "Flying Whale — Create Sovereign Pact",
+      description:
+        "Create a whale-pact-v4 pact. Supports all 5 proof types including SOVEREIGN. " +
+        "SOVEREIGN type requires both chain-target (STX) AND whale-target (WHALE tokens). " +
+        "Fees route to whale-treasury-v1 for buyback. Requires WHALE agent access.",
+      inputSchema: z.object({
+        callerAddress:  z.string().min(1).describe(CALLER_DESC),
+        worker:         z.string().describe("Worker principal (SP...)"),
+        amountStx:      z.number().positive().describe("Pact amount in STX"),
+        workHashHex:    z.string().length(64).describe("32-byte work hash as hex"),
+        proofType:      z.enum(["HASH","ORACLE","HYBRID","CHAIN","SOVEREIGN"]),
+        deadlineBlocks: z.number().int().positive().describe("Blocks until deadline"),
+        verifier:       z.string().optional().describe("Verifier for ORACLE/HYBRID"),
+        chainTargetStx: z.number().optional().describe("Required STX balance for CHAIN/SOVEREIGN"),
+        whaleTarget:    z.number().optional().describe("Required WHALE token balance for SOVEREIGN (6 decimals)"),
+      }),
+    },
+    async ({ callerAddress, worker, amountStx, workHashHex, proofType, deadlineBlocks, verifier, chainTargetStx, whaleTarget }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        const proofId = { HASH: 0, ORACLE: 1, HYBRID: 2, CHAIN: 3, SOVEREIGN: 4 }[proofType]!;
+        const feeBps  = { HASH: 100, ORACLE: 150, HYBRID: 200, CHAIN: 75, SOVEREIGN: 50 }[proofType]!;
+        const amountUstx = Math.round(amountStx * 1_000_000);
+        const feeUstx    = Math.floor(amountUstx * feeBps / 10_000);
+
+        const warnings: string[] = [];
+        if (proofType === "SOVEREIGN" && (!chainTargetStx || !whaleTarget))
+          warnings.push("SOVEREIGN requires both chainTargetStx and whaleTarget");
+        if (proofType === "ORACLE" || proofType === "HYBRID")
+          if (!verifier) warnings.push("ORACLE/HYBRID requires verifier");
+
+        return createJsonResponse({
+          ready:          warnings.length === 0,
+          warnings,
+          worker,
+          amountStx,
+          feeStx:         feeUstx / 1_000_000,
+          feePct:         `${feeBps / 100}%`,
+          totalLockedStx: (amountUstx + feeUstx) / 1_000_000,
+          proofType,
+          proofId,
+          chainTargetStx: chainTargetStx ?? null,
+          whaleTarget:    whaleTarget ?? null,
+          feeDestination: "whale-treasury-v1",
+          callContract: {
+            contractAddress: SOV_ADDR,
+            contractName:    SOV_NAME,
+            functionName:    "create-pact",
+            note: `Args: (worker principal), (amount uint ${amountUstx}), (work-hash buff 32 0x${workHashHex}), (chain-target optional uint), (whale-target optional uint), (proof-type uint ${proofId}), (verifier optional principal), (deadline-blocks uint ${deadlineBlocks})`,
+          },
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 4. flying_whale_sovereign_check ──────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_check",
+    {
+      title: "Flying Whale — Check Sovereign Conditions",
+      description:
+        "Check if a SOVEREIGN pact's dual-chain conditions are currently met. " +
+        "Reads worker's live STX balance AND WHALE token balance from chain. " +
+        "Returns true if BOTH targets are satisfied — pact is ready for settle-sovereign.",
+      inputSchema: z.object({
+        pactId: z.number().int().positive().describe("Sovereign pact ID to check"),
+      }),
+    },
+    async ({ pactId }) => {
+      try {
+        const rawCheck = await sovCallRead("check-sovereign", [serializeCV(uintCV(pactId))]);
+        const rawPact  = await sovCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+
+        let conditionsMet = false;
+        if (rawCheck.okay) {
+          try {
+            const cv = cvToJSON(deserializeCV(rawCheck.result)) as any;
+            conditionsMet = (cv.value ?? cv) === true || cv === true;
+          } catch { /* */ }
+        }
+
+        const pact = rawPact.okay ? decodeSovPact(rawPact.result) : null;
+
+        return createJsonResponse({
+          pactId,
+          conditionsMet,
+          readyToSettle: conditionsMet && pact?.stateName === "OPEN",
+          pact,
+          note: conditionsMet
+            ? "Call flying_whale_sovereign_settle to trigger permissionless settlement and earn keeper fee."
+            : "Conditions not yet met. Worker needs more STX or WHALE balance.",
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 5. flying_whale_sovereign_settle ─────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_settle",
+    {
+      title: "Flying Whale — Settle Sovereign Pact",
+      description:
+        "Permissionless dual-chain settlement for a whale-pact-v4 SOVEREIGN pact. " +
+        "Verifies worker holds >= chain-target STX AND >= whale-target WHALE simultaneously. " +
+        "Caller (keeper) earns 0.10% of pact fee as incentive. Remaining fee to treasury.",
+      inputSchema: z.object({
+        pactId: z.number().int().positive().describe("SOVEREIGN pact ID to settle"),
+      }),
+    },
+    async ({ pactId }) => {
+      try {
+        const rawPact = await sovCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        const pact = rawPact.okay ? decodeSovPact(rawPact.result) : null;
+        if (pact && pact.proofType !== 4)
+          throw new Error(`Pact is ${pact.proofName} type — settle-sovereign only for SOVEREIGN (u4)`);
+
+        return createJsonResponse({
+          ready: true,
+          pactId,
+          pact,
+          keeperIncentive: pact ? `${(pact.feeStx * 10 / 50).toFixed(6)} STX (0.10% of fee)` : "calculated at settlement",
+          callContract: {
+            contractAddress: SOV_ADDR,
+            contractName:    SOV_NAME,
+            functionName:    "settle-sovereign",
+            functionArgs: [{ type: "uint", value: pactId }],
+          },
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 6. flying_whale_sovereign_submit_proof ───────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_submit_proof",
+    {
+      title: "Flying Whale — Sovereign Submit Proof",
+      description:
+        "Submit hash proof for a whale-pact-v4 HASH or HYBRID pact. " +
+        "Fees route to whale-treasury-v1 on release.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId:      z.number().int().positive().describe("Pact ID"),
+        preimageHex: z.string().describe("Preimage as hex string"),
+      }),
+    },
+    async ({ callerAddress, pactId, preimageHex }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        return createJsonResponse({
+          ready: true,
+          pactId,
+          callContract: {
+            contractAddress: SOV_ADDR,
+            contractName:    SOV_NAME,
+            functionName:    "submit-proof",
+            functionArgs: [
+              { type: "uint",   value: pactId },
+              { type: "buffer", hex: preimageHex },
+            ],
+          },
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 7. flying_whale_sovereign_attest ─────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_attest",
+    {
+      title: "Flying Whale — Sovereign Attest",
+      description:
+        "Verifier attests a whale-pact-v4 ORACLE or HYBRID pact. Fee routes to treasury on release.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("Pact ID"),
+        valid:  z.boolean().describe("true = approve and release | false = dispute"),
+      }),
+    },
+    async ({ callerAddress, pactId, valid }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        return createJsonResponse({
+          ready: true,
+          pactId, valid,
+          callContract: {
+            contractAddress: SOV_ADDR,
+            contractName:    SOV_NAME,
+            functionName:    "attest",
+            functionArgs: [
+              { type: "uint", value: pactId },
+              { type: "bool", value: valid },
+            ],
+          },
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 8. flying_whale_sovereign_settle_chain ───────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_settle_chain",
+    {
+      title: "Flying Whale — Sovereign Settle Chain",
+      description:
+        "Permissionless CHAIN (u3) settlement for a whale-pact-v4 pact. " +
+        "Checks worker STX balance >= chain-target. Fee routes to whale-treasury-v1.",
+      inputSchema: z.object({
+        pactId: z.number().int().positive().describe("CHAIN pact ID"),
+      }),
+    },
+    async ({ pactId }) => {
+      try {
+        return createJsonResponse({
+          ready: true,
+          pactId,
+          callContract: {
+            contractAddress: SOV_ADDR,
+            contractName:    SOV_NAME,
+            functionName:    "settle-chain",
+            functionArgs: [{ type: "uint", value: pactId }],
+          },
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 9. flying_whale_sovereign_refund ─────────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_refund",
+    {
+      title: "Flying Whale — Sovereign Refund",
+      description:
+        "Hirer reclaims locked STX after deadline from a whale-pact-v4 pact in OPEN state.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId: z.number().int().positive().describe("Pact ID to refund"),
+      }),
+    },
+    async ({ callerAddress, pactId }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const raw = await sovCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        const pact = raw.okay ? decodeSovPact(raw.result) : null;
+
+        return createJsonResponse({
+          ready: true,
+          pactId,
+          pact,
+          callContract: {
+            contractAddress: SOV_ADDR,
+            contractName:    SOV_NAME,
+            functionName:    "refund",
+            functionArgs: [{ type: "uint", value: pactId }],
+          },
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 10. flying_whale_sovereign_resolve ───────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_resolve",
+    {
+      title: "Flying Whale — Resolve Sovereign Dispute",
+      description:
+        "CONTRACT-OWNER resolves a DISPUTED whale-pact-v4 pact. Fee routes to treasury on release.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        pactId:      z.number().int().positive().describe("Disputed pact ID"),
+        favorWorker: z.boolean().describe("true = pay worker | false = refund hirer"),
+      }),
+    },
+    async ({ callerAddress, pactId, favorWorker }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+        const raw = await sovCallRead("get-pact", [serializeCV(uintCV(pactId))]);
+        const pact = raw.okay ? decodeSovPact(raw.result) : null;
+        if (pact && pact.stateName !== "DISPUTED")
+          throw new Error(`Pact is ${pact.stateName} — resolve only for DISPUTED pacts`);
+
+        return createJsonResponse({
+          ready: true,
+          pactId, favorWorker,
+          pact,
+          callContract: {
+            contractAddress: SOV_ADDR,
+            contractName:    SOV_NAME,
+            functionName:    "resolve-dispute",
+            functionArgs: [
+              { type: "uint", value: pactId },
+              { type: "bool", value: favorWorker },
+            ],
+          },
+          instruction: "Only SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW (zaghmout.btc) can call this.",
+          contract: `${SOV_ADDR}.${SOV_NAME}`,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── 11. flying_whale_sovereign_governance ────────────────────────────────────
+  server.registerTool(
+    "flying_whale_sovereign_governance",
+    {
+      title: "Flying Whale — Sovereign Governance",
+      description:
+        "Interact with whale-pact-v4 WHALE-weighted fee governance. " +
+        "Actions: 'fees' = read live fee BPS | 'propose' = propose fee change | " +
+        "'vote' = vote on proposal | 'execute' = execute passed proposal after timelock. " +
+        "Vote weight = caller's WHALE balance. Quorum = 3 unique voters. Timelock = 144 blocks.",
+      inputSchema: z.object({
+        callerAddress: z.string().min(1).describe(CALLER_DESC),
+        action:     z.enum(["fees","propose","vote","execute"]).describe("Governance action"),
+        proposalId: z.number().int().positive().optional().describe("Proposal ID (for vote/execute)"),
+        tier:       z.enum(["HASH","ORACLE","HYBRID","CHAIN","SOVEREIGN"]).optional()
+          .describe("Fee tier to change (for propose)"),
+        newBps:     z.number().int().min(1).max(500).optional()
+          .describe("New fee in basis points, e.g. 120 = 1.20% (for propose, max 500=5%)"),
+        support:    z.boolean().optional().describe("true=yes / false=no (for vote)"),
+      }),
+    },
+    async ({ callerAddress, action, proposalId, tier, newBps, support }) => {
+      try {
+        await verifyWhaleAccess(callerAddress, "agent");
+
+        if (action === "fees") {
+          const rawFees = await sovCallRead("get-fees", []);
+          let fees: Record<string, any> = {};
+          if (rawFees.okay) {
+            try {
+              const fv = cvToJSON(deserializeCV(rawFees.result)) as any;
+              const fv2 = fv.value ?? fv;
+              const num = (v: any) => typeof v === "string" ? parseInt(v, 10) : Number(v);
+              fees = {
+                HASH:      { bps: num(fv2.hash?.value      ?? fv2.hash),      pct: `${num(fv2.hash?.value      ?? fv2.hash)      / 100}%` },
+                ORACLE:    { bps: num(fv2.oracle?.value    ?? fv2.oracle),    pct: `${num(fv2.oracle?.value    ?? fv2.oracle)    / 100}%` },
+                HYBRID:    { bps: num(fv2.hybrid?.value    ?? fv2.hybrid),    pct: `${num(fv2.hybrid?.value    ?? fv2.hybrid)    / 100}%` },
+                CHAIN:     { bps: num(fv2.chain?.value     ?? fv2.chain),     pct: `${num(fv2.chain?.value     ?? fv2.chain)     / 100}%` },
+                SOVEREIGN: { bps: num(fv2.sovereign?.value ?? fv2.sovereign), pct: `${num(fv2.sovereign?.value ?? fv2.sovereign) / 100}%` },
+                keeper:    { bps: num(fv2.keeper?.value    ?? fv2.keeper),    pct: `${num(fv2.keeper?.value    ?? fv2.keeper)    / 100}% (keeper incentive for SOVEREIGN settle)` },
+              };
+            } catch { fees = { error: "decode failed" }; }
+          }
+          return createJsonResponse({ action: "fees", fees, contract: `${SOV_ADDR}.${SOV_NAME}`, ...SOVEREIGNTY_STAMP });
+        }
+
+        if (action === "propose") {
+          if (!tier || !newBps) throw new Error("propose requires tier and newBps");
+          const tierId = { HASH: 0, ORACLE: 1, HYBRID: 2, CHAIN: 3, SOVEREIGN: 4 }[tier]!;
+          return createJsonResponse({
+            action: "propose",
+            tier, newBps, tierId,
+            callContract: {
+              contractAddress: SOV_ADDR,
+              contractName:    SOV_NAME,
+              functionName:    "propose-fee-change",
+              functionArgs: [
+                { type: "uint", value: tierId },
+                { type: "uint", value: newBps },
+              ],
+            },
+            note: "Proposal timelock = 144 blocks (~1 day). Quorum = 3 unique WHALE holders.",
+            contract: `${SOV_ADDR}.${SOV_NAME}`,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        if (action === "vote") {
+          if (!proposalId || support === undefined) throw new Error("vote requires proposalId and support");
+          const rawProp = await sovCallRead("get-proposal", [serializeCV(uintCV(proposalId))]);
+          let proposal: any = null;
+          if (rawProp.okay) {
+            try {
+              const cv = cvToJSON(deserializeCV(rawProp.result)) as any;
+              proposal = cv.value ?? cv;
+            } catch { /* */ }
+          }
+          return createJsonResponse({
+            action: "vote",
+            proposalId, support,
+            proposal,
+            callContract: {
+              contractAddress: SOV_ADDR,
+              contractName:    SOV_NAME,
+              functionName:    "vote-proposal",
+              functionArgs: [
+                { type: "uint", value: proposalId },
+                { type: "bool", value: support },
+              ],
+            },
+            note: "Vote weight = your WHALE balance. Must vote before executable-at block.",
+            contract: `${SOV_ADDR}.${SOV_NAME}`,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        if (action === "execute") {
+          if (!proposalId) throw new Error("execute requires proposalId");
+          return createJsonResponse({
+            action: "execute",
+            proposalId,
+            callContract: {
+              contractAddress: SOV_ADDR,
+              contractName:    SOV_NAME,
+              functionName:    "execute-proposal",
+              functionArgs: [{ type: "uint", value: proposalId }],
+            },
+            note: "Requires: quorum (3 voters) + yes > no + block >= executable-at",
+            contract: `${SOV_ADDR}.${SOV_NAME}`,
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        throw new Error(`Unknown action: ${action}`);
       } catch (error) {
         return createErrorResponse(error);
       }
