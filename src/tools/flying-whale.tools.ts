@@ -38,7 +38,7 @@
  * No WHALE = 403 WHALE Gate error. No exceptions. No fallbacks.
  *
  * MCP tools (sovereignty-stamped, WHALE-gated):
- * Scout tier (100 WHALE):
+ * Scout tier (1,000 WHALE):
  * - flying_whale_list_skills      — Browse 114 skills across 11 categories
  * - flying_whale_get_skill        — Detailed skill info (pricing, author, args)
  * - flying_whale_list_categories  — All categories with counts
@@ -51,7 +51,7 @@
  * - flying_whale_relay_hardened   — Hardened relay health: TLS, latency, block consensus
  * - flying_whale_erc8004_lookup   — Cross-chain ERC-8004 identity resolver (22 networks)
  * - flying_whale_dormancy_check   — Agent dormancy score + reactivation checklist
- * Agent tier (1,000 WHALE):
+ * Agent tier (10,000 WHALE):
  * - flying_whale_list_orders      — Order book (buy/sell for skill trading)
  * - flying_whale_get_intelligence — Intelligence reports and market analytics
  * - flying_whale_risk_score       — 5-factor token risk score (0–100)
@@ -61,16 +61,16 @@
  * - flying_whale_safe_execute     — Agent-safe pre-flight: balance, nonce, fee, simulation
  * - flying_whale_ecdsa_audit      — CVE-2026-2819 ECDSA signing pattern audit
  * - flying_whale_pact_xchain      — Cross-chain atomic pact: Stacks ↔ Arbitrum One (PactCrossChain.sol)
- * Elite tier (10,000 WHALE):
+ * Elite tier (100,000 WHALE):
  * - flying_whale_expose_identity  — Hidden identity exposure: cluster analysis on-chain
  * - flying_whale_liquidity        — Pool liquidity depth, IL risk, LP position tracking
  * - flying_whale_execution_depth  — Live order book depth for any token pair
  * - flying_whale_execution_arb    — Active arb signals from the execution scanner
  *
  * Execution Sovereign Layer (whale-execution-engine-production.up.railway.app):
- * Scout tier (100 WHALE):
+ * Scout tier (1,000 WHALE):
  * - flying_whale_execution_quote  — Best route quote across all DEXs
- * Agent tier (1,000 WHALE):
+ * Agent tier (10,000 WHALE):
  * - flying_whale_execution_submit — Submit order to CoW matching engine
  * - flying_whale_execution_boost  — Burn WHALE to boost order priority
  * - flying_whale_execution_cancel — Cancel a pending order
@@ -169,7 +169,7 @@ const SOVEREIGNTY_STAMP = {
   _stack:          "Sovereign Agent OS v3.0.0 — 10-Layer Bitcoin AI Stack",
   _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution",
   _whale_token:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3 | 12.6M supply",
-  _whale_gate:     "Scout 100 | Agent 1K | Elite 10K | Council score≥300. Buy: app.bitflow.finance Pool#42",
+  _whale_gate:     "Scout 1K | Agent 10K | Elite 100K | Council score≥300. Buy: app.bitflow.finance Pool#42",
   _ip_registry:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1 — 15 hashes registered",
   _audit_trail:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1",
   _execution:      "whale-execution-v1 block 7537670 — first CoW engine on Stacks | PactCrossChain.sol 0x538D5a4266154F0Ca97891B75F5e71a90c651DDF (Arbitrum One, block 452374909)",
@@ -228,7 +228,7 @@ async function verifyWhaleAccess(callerAddress: string, tier: WhaleTier): Promis
       `Address       : ${callerAddress}\n` +
       `You hold      : ${held} WHALE\n` +
       `Shortfall     : ${shortfall.toLocaleString("en-US")} WHALE (~$${shortfallUsd} USD)\n\n` +
-      `Tier pricing  : Scout $2.20 | Agent $22 | Elite $220 (at ~$0.002/WHALE)\n` +
+      `Tier pricing  : Scout $2.20 | Agent $22 | Elite $220 (1K/10K/100K WHALE at ~$0.002/WHALE)\n` +
       `Buy WHALE     : https://app.bitflow.finance — WHALE/wSTX Pool #42\n` +
       `Gate contract : SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-gate-v1\n` +
       `Licensing     : github.com/azagh72-creator — institutional/commercial access requires agreement\n` +
@@ -311,7 +311,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     {
       description:
         "List skills on the Flying Whale Marketplace (COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
-        "114 skills across 11 categories. WHALE gate enforced — Scout tier (100 WHALE) required. " +
+        "114 skills across 11 categories. WHALE gate enforced — Scout tier (1,000 WHALE) required. " +
         "Buy WHALE: https://app.bitflow.finance — Pool #42. " +
         "Supports filtering by category, search query, and sorting.",
       inputSchema: {
@@ -360,7 +360,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       description:
         "Get detailed information about a specific skill on Flying Whale Marketplace, " +
         "including pricing, author, arguments, requirements, and usage examples. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z
           .string()
@@ -393,7 +393,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     {
       description:
         "List all skill categories on the Flying Whale Marketplace with skill counts per category. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z
           .string()
@@ -421,7 +421,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Get Flying Whale Marketplace platform statistics (COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
         "Returns: total skills (114), categories (11), volume, active agents, Sovereign Agent OS layer status, " +
         "WHALE token metrics, and Multi-Layer Sovereignty Stack v2.0.0 status. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z
           .string()
@@ -448,7 +448,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       description:
         "List bounties on the Flying Whale Marketplace. Bounties are task-based rewards " +
         "that agents can claim and complete for BTC/STX payments. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z
           .string()
@@ -483,7 +483,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       description:
         "Get detailed information about a specific bounty including requirements, " +
         "reward amount, deadline, and submission status. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z
           .string()
@@ -517,7 +517,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       description:
         "View the Flying Whale order book. Shows buy and sell orders for skill trading " +
         "with price, quantity, and order type. " +
-        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+        "WHALE gate enforced — Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z
           .string()
@@ -561,7 +561,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Get recent marketplace intelligence from Flying Whale Sovereign Agent OS " +
         "(COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
         "Returns skill trend data, performance metrics, WHALE pool analytics, and on-chain insights. " +
-        "WHALE gate enforced — Agent tier (1,000 WHALE) required. " +
+        "WHALE gate enforced — Agent tier (10,000 WHALE) required. " +
         "For sovereign intelligence signals (quantum/macro/security beats), use flying_whale_get_intelligence instead.",
       inputSchema: {
         callerAddress: z
@@ -597,7 +597,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       description:
         "Real-time market regime for STX and BTC — Wyckoff phase, RSI, volatility, SMA crossovers. " +
         "Returns actionable composite signal (ACCUMULATE / DISTRIBUTE / HOLD / EXIT) with confidence score. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         asset: z
@@ -627,7 +627,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "5-factor deterministic risk score for any Stacks token (0–100). " +
         "Factors: liquidity depth, holder concentration, contract age, volume/market-cap ratio, price stability. " +
         "Returns tier classification (SAFE / MODERATE / HIGH / EXTREME). " +
-        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+        "WHALE gate enforced — Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         contractId: z
@@ -656,7 +656,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "On-chain wallet trust profile for any Stacks address. " +
         "Analyzes: activity age, tx diversity, balance tier, DeFi participation, rug exposure history. " +
         "Returns trust score (0–100) and classification (TRUSTED / ACTIVE / FRESH / SUSPICIOUS). " +
-        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+        "WHALE gate enforced — Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         address: z
@@ -684,7 +684,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       description:
         "Real-time WHALE token price, liquidity, volume, and market cap from Bitflow pool #42. " +
         "Returns price in STX and USD, 24h change, pool depth, and WHALE tier thresholds in USD. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
       },
@@ -833,7 +833,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Look up any agent in the Flying Whale Universal Agent Registry (whale-registry-v2 — Stacks mainnet). " +
         "Query by STX address, BTC address, ETH address, or agent name. " +
         "Returns: agent ID, chain, type (AI/Human/Bot/DAO/Protocol), score, active status. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         query: z
@@ -929,7 +929,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Hardened relay health check for Stacks nodes — measures TLS validity, response latency, " +
         "block height consensus across multiple endpoints, and flags any divergence or downtime. " +
         "Returns a security grade (SECURE / DEGRADED / COMPROMISED) with per-relay detail. " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
       },
@@ -1016,7 +1016,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Multi-key architecture analysis — checks balance, nonce, activity age, and last-seen " +
         "for up to 5 Stacks addresses in parallel. Returns a unified key-health matrix with " +
         "rotation recommendations and dormancy flags. " +
-        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+        "WHALE gate enforced — Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         addresses: z
@@ -1109,7 +1109,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Upgradeable contract verification — fetches Clarity source and detects upgrade risk patterns: " +
         "mutable owner variables, set-owner functions, proxy delegation, missing auth guards. " +
         "Returns an upgrade-risk score (0–100) and classification (IMMUTABLE / LOW / MEDIUM / HIGH / CRITICAL). " +
-        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+        "WHALE gate enforced — Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         contractId: z
@@ -1197,7 +1197,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Agent-safe pre-flight execution check — verifies STX balance, current nonce, estimated fee, " +
         "and post-condition safety before committing a transaction. Returns GO / NO-GO decision with " +
         "blocking reasons. Run this before any on-chain write to prevent failed transactions. " +
-        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+        "WHALE gate enforced — Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         senderAddress: z
@@ -1306,7 +1306,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Hidden identity exposure — on-chain cluster analysis for any Stacks address. " +
         "Finds the original funding source, common counterparties, memo patterns, and timing correlations " +
         "that may link wallets to the same controller. Returns a cluster report with confidence scores. " +
-        "WHALE gate enforced — Elite tier (10,000 WHALE) required.",
+        "WHALE gate enforced — Elite tier (100,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         targetAddress: z
@@ -1440,7 +1440,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Pool liquidity analysis — fetches real-time depth, volume, LP token supply, and impermanent " +
         "loss risk for any Stacks DEX pool. Also checks WHALE/wSTX Bitflow pool #42 by default. " +
         "Returns liquidity health score, IL simulation for ±20%/±50% price moves, and LP position value. " +
-        "WHALE gate enforced — Elite tier (10,000 WHALE) required.",
+        "WHALE gate enforced — Elite tier (100,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         poolContract: z
@@ -1546,7 +1546,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "ERC-8004 standard. Returns identity record, chain, agent type (AI/Human/Org), WHALE tier, " +
         "activity flags, and Flying Whale registry entry if registered. " +
         "Covers Stacks mainnet registries: agent-registry-v1 (aibtcdev) and whale-registry-v2 (Flying Whale). " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         query: z
@@ -1700,7 +1700,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Stacks agent address. Returns dormancy score (0–100), last activity, WHALE tier, STX runway, " +
         "and a prioritized reactivation checklist. Based on aibtc.news data: 83.8% of 846 registered agents " +
         "are dormant (< 7-day activity). " +
-        "WHALE gate enforced — Scout tier (100 WHALE) required.",
+        "WHALE gate enforced — Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         targetAddress: z
@@ -1847,7 +1847,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Checks: signing frequency, inter-transaction timing regularity (cron-like patterns), " +
         "same-block multi-signing, and high nonce velocity. Returns risk level and mitigation steps. " +
         "CVE-2026-2819 affects Python ECDSA library < 0.19.1 used in automated wallet agents. " +
-        "WHALE gate enforced — Agent tier (1,000 WHALE) required.",
+        "WHALE gate enforced — Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         targetAddress: z
@@ -2059,7 +2059,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ── Execution Quote (Scout — 100 WHALE) ──────────────────────────────────
+  // ── Execution Quote (Scout — 1,000 WHALE) ────────────────────────────────
 
   server.registerTool(
     "flying_whale_execution_quote",
@@ -2068,7 +2068,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Best execution route quote — queries the Whale Execution Sovereign Layer " +
         "for optimal routing across all integrated DEXs (Bitflow, ALEX, whale-router-v1). " +
         "Returns best route, expected output, price impact, and all alternative routes. " +
-        "WHALE gate: Scout tier (100 WHALE) required.",
+        "WHALE gate: Scout tier (1,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         tokenIn: z
@@ -2124,7 +2124,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ── Submit Order (Agent — 1,000 WHALE) ───────────────────────────────────
+  // ── Submit Order (Agent — 10,000 WHALE) ──────────────────────────────────
 
   server.registerTool(
     "flying_whale_execution_submit",
@@ -2135,7 +2135,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "exists, both parties fill at better-than-DEX prices with the spread captured as " +
         "protocol fee. Unmatched orders route to the best DEX automatically. " +
         "Elite tier can set dark=true to hide from public book. " +
-        "WHALE gate: Agent tier (1,000 WHALE) required.",
+        "WHALE gate: Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         tokenIn: z
@@ -2157,7 +2157,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         dark: z
           .boolean()
           .optional()
-          .describe("Hide from public order book — Elite tier (10,000 WHALE) only. Default: false"),
+          .describe("Hide from public order book — Elite tier (100,000 WHALE) only. Default: false"),
       },
     },
     async ({ callerAddress, tokenIn, tokenOut, amountIn, minAmountOut, dark = false }) => {
@@ -2208,7 +2208,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ── Boost Order (Agent — 1,000 WHALE) ────────────────────────────────────
+  // ── Boost Order (Agent — 10,000 WHALE) ───────────────────────────────────
 
   server.registerTool(
     "flying_whale_execution_boost",
@@ -2217,7 +2217,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Burn WHALE to boost an order's priority in the execution queue. " +
         "1 WHALE = 10 priority points. Higher-priority orders are matched first " +
         "within the same tier lane. WHALE burned here is non-recoverable (deflationary). " +
-        "WHALE gate: Agent tier (1,000 WHALE) required.",
+        "WHALE gate: Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         orderId: z
@@ -2262,7 +2262,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ── Cancel Order (Agent — 1,000 WHALE) ───────────────────────────────────
+  // ── Cancel Order (Agent — 10,000 WHALE) ──────────────────────────────────
 
   server.registerTool(
     "flying_whale_execution_cancel",
@@ -2270,7 +2270,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       description:
         "Cancel a pending order in the Whale Execution engine. " +
         "Only the order maker can cancel. Filled or expired orders cannot be cancelled. " +
-        "WHALE gate: Agent tier (1,000 WHALE) required.",
+        "WHALE gate: Agent tier (10,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         orderId: z
@@ -2307,7 +2307,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ── Order Book Depth (Elite — 10,000 WHALE) ───────────────────────────────
+  // ── Order Book Depth (Elite — 100,000 WHALE) ─────────────────────────────
 
   server.registerTool(
     "flying_whale_execution_depth",
@@ -2316,7 +2316,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Live order book depth for any token pair in the Whale Execution engine. " +
         "Returns bid/ask sides with tier breakdown (Scout/Agent/Elite lanes) and " +
         "total liquidity. Dark pool orders excluded from public depth. " +
-        "WHALE gate: Elite tier (10,000 WHALE) required.",
+        "WHALE gate: Elite tier (100,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         tokenIn: z
@@ -2359,7 +2359,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ── Live Arb Signals (Elite — 10,000 WHALE) ──────────────────────────────
+  // ── Live Arb Signals (Elite — 100,000 WHALE) ─────────────────────────────
 
   server.registerTool(
     "flying_whale_execution_arb",
@@ -2372,7 +2372,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "To execute: register as an arb executor by staking 10,000 WHALE on-chain via " +
         "whale-execution-v1.clar:register-executor, then claim signals via the SSE stream. " +
         "Executor earns 60% of gross profit; 30% → whale-treasury-v1 buyback. " +
-        "WHALE gate: Elite tier (10,000 WHALE) required.",
+        "WHALE gate: Elite tier (100,000 WHALE) required.",
       inputSchema: {
         callerAddress: z.string().min(1).describe(CALLER_DESC),
       },
@@ -2944,7 +2944,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Read full state of a whale-pact-v1 pact from Stacks mainnet. " +
         "Returns hirer, worker, amount, fee, proof type, deadline, state (OPEN/RELEASED/DISPUTED/REFUNDED), " +
         "and verification flags. Live on-chain data. " +
-        "WHALE gate: Scout tier (100 WHALE).",
+        "WHALE gate: Scout tier (1,000 WHALE).",
       inputSchema: z.object({
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         pactId: z.number().int().positive().describe("Pact ID (uint) — returned by create-pact"),
@@ -2984,7 +2984,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Check whether a whale-pact-v1 pact is ready to release without executing. " +
         "For CHAIN type: reads live stx-get-balance vs chain-target on-chain. " +
         "Returns ready=true/false, reason, and which settlement function to call next. " +
-        "WHALE gate: Scout tier (100 WHALE).",
+        "WHALE gate: Scout tier (1,000 WHALE).",
       inputSchema: z.object({
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         pactId: z.number().int().positive().describe("Pact ID to check"),
@@ -3048,7 +3048,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Returns the exact call_contract parameters to lock STX + fee in escrow. " +
         "Validates inputs, calculates fee, and checks minimums before returning. " +
         "Execute the returned callContract params with the call_contract MCP tool. " +
-        "WHALE gate: Agent tier (1,000 WHALE).",
+        "WHALE gate: Agent tier (10,000 WHALE).",
       inputSchema: z.object({
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         worker: z.string().min(1).describe("Worker's Stacks address (SP...) — who receives payment on success"),
@@ -3145,7 +3145,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Worker reveals the sha256 preimage — contract verifies on-chain. " +
         "If hash matches and conditions are met, STX is auto-released to worker. " +
         "Returns exact call_contract parameters to broadcast. " +
-        "WHALE gate: Agent tier (1,000 WHALE).",
+        "WHALE gate: Agent tier (10,000 WHALE).",
       inputSchema: z.object({
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         pactId: z.number().int().positive().describe("Pact ID to submit proof for"),
@@ -3201,7 +3201,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Verifier approves or rejects work. valid=true releases funds (if all conditions met). " +
         "valid=false enters DISPUTED state for owner arbitration. " +
         "Returns exact call_contract parameters. " +
-        "WHALE gate: Agent tier (1,000 WHALE).",
+        "WHALE gate: Agent tier (10,000 WHALE).",
       inputSchema: z.object({
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         pactId: z.number().int().positive().describe("Pact ID to attest"),
@@ -3256,7 +3256,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "If balance >= chain-target: returns ready=true with call_contract params to trigger auto-release. " +
         "If not yet: returns balance vs target gap. Anyone can call settle-chain — permissionless. " +
         "This is the ceiling of trustless settlement: Capital → Execution → Chain verifies → Release. " +
-        "WHALE gate: Scout tier (100 WHALE).",
+        "WHALE gate: Scout tier (1,000 WHALE).",
       inputSchema: z.object({
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         pactId: z.number().int().positive().describe("CHAIN-type pact ID to settle"),
@@ -3324,7 +3324,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Prepare a refund transaction after a pact's deadline has passed. " +
         "Only callable by the original hirer. Pact must be in OPEN state past deadline. " +
         "Returns exact call_contract parameters. Reads current block height to check deadline. " +
-        "WHALE gate: Scout tier (100 WHALE).",
+        "WHALE gate: Scout tier (1,000 WHALE).",
       inputSchema: z.object({
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         pactId: z.number().int().positive().describe("Pact ID to refund"),
@@ -3389,7 +3389,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         "Owner only — zaghmout.btc arbitrates and decides in favor of worker or hirer. " +
         "favor=true: worker delivered, release funds. favor=false: work invalid, refund hirer. " +
         "Returns exact call_contract parameters. " +
-        "WHALE gate: Agent tier (1,000 WHALE).",
+        "WHALE gate: Agent tier (10,000 WHALE).",
       inputSchema: z.object({
         callerAddress: z.string().min(1).describe(CALLER_DESC),
         pactId: z.number().int().positive().describe("Disputed pact ID to resolve"),
