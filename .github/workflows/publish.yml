@@ -38,14 +38,13 @@ jobs:
       - name: Publish to npm
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          echo "Publishing @aibtc/mcp-server@${VERSION}"
-          if npm view "@aibtc/mcp-server@${VERSION}" version 2>/dev/null; then
-            echo "::notice::@aibtc/mcp-server@${VERSION} already published, skipping"
+          PKG_NAME=$(node -p "require('./package.json').name")
+          echo "Publishing ${PKG_NAME}@${VERSION}"
+          if npm view "${PKG_NAME}@${VERSION}" version 2>/dev/null; then
+            echo "::notice::${PKG_NAME}@${VERSION} already published, skipping"
           else
             npm publish --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Setup Node.js for GitHub Packages
         uses: actions/setup-node@v4
@@ -58,6 +57,6 @@ jobs:
         run: |
           npm pkg set name="@aibtcdev/aibtc-mcp-server"
           npm publish --access public || echo "::warning::GitHub Packages publish failed, may already exist"
-          npm pkg set name="@aibtc/mcp-server"
+          npm pkg set name="flying-whale-mcp-server"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
