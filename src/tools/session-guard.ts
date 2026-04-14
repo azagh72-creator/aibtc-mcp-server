@@ -102,6 +102,25 @@ const ipiAuditLog: IpiAuditEntry[] = [];
 const ipiPhraseCount: Map<string, number> = new Map();
 const COORDINATED_ATTACK_THRESHOLD = 3;
 
+// ─── License Gate ─────────────────────────────────────────────────────────────
+// External use of IPI Defense exports requires FW_LICENSE_KEY.
+// Internal use (within session-guard.ts itself) is always allowed.
+const _FW_OWNER      = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+const _FW_LICENSE_KEY = process.env.FW_LICENSE_KEY ?? "";
+const _FW_IS_OWNER    = _FW_LICENSE_KEY === "OWNER" || _FW_LICENSE_KEY === _FW_OWNER;
+
+function _assertLicensedExternal(fn: string): void {
+  if (_FW_IS_OWNER) return;
+  if (!_FW_LICENSE_KEY || _FW_LICENSE_KEY.trim() === "") {
+    throw new Error(
+      `Flying Whale IPI Defense — License Required\n` +
+      `Function: ${fn}\n` +
+      `FW_LICENSE_KEY not set. Obtain a license: github.com/azagh72-creator\n` +
+      `On-chain IP: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1`
+    );
+  }
+}
+
 export function ipiLogAttack(scan: IpiScanResult, contentSnippet: string): void {
   if (!scan.detected || !scan.phrase) return;
   const entry: IpiAuditEntry = {
@@ -122,10 +141,12 @@ export function ipiLogAttack(scan: IpiScanResult, contentSnippet: string): void 
 }
 
 export function ipiGetAuditLog(): IpiAuditEntry[] {
+  _assertLicensedExternal("ipiGetAuditLog");
   return [...ipiAuditLog];
 }
 
 export function ipiIsCoordinatedAttack(phrase: string): boolean {
+  _assertLicensedExternal("ipiIsCoordinatedAttack");
   return (ipiPhraseCount.get(phrase) ?? 0) >= COORDINATED_ATTACK_THRESHOLD;
 }
 
@@ -139,6 +160,7 @@ export function ipiSanitize(content: string): {
   wasInjected: boolean;
   removedPhrases: string[];
 } {
+  _assertLicensedExternal("ipiSanitize");
   let sanitized = content;
   const removedPhrases: string[] = [];
   const lower = content.toLowerCase();
@@ -225,8 +247,7 @@ const WALLET_SENSITIVE: Set<string> = new Set([
   "transfer_token",
   "transfer_nft",
   "broadcast_transaction",
-  // Wallet operations
-  "wallet_unlock",
+  // Wallet operations (unlock excluded — it doesn't spend funds, blocking it prevents recovery)
   "wallet_create",
   "wallet_import",
   "wallet_export",

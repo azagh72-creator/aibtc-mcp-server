@@ -27,10 +27,11 @@
  * Layer 10 — whale-execution-v1       — First CoW matching engine on Stacks
  *
  * WHALE Access Model — No WHALE = No Access (enforced on-chain via Hiro API):
- *   Scout  (100 WHALE)    — skill browsing, categories, stats
- *   Agent  (1,000 WHALE)  — intelligence, order book, analytics
- *   Elite  (10,000 WHALE) — all features + premium data
- *   Council (score ≥ 300) — governance, proposals
+ *   Scout  (1,000 WHALE)   — skill browsing, categories, stats
+ *   Agent  (10,000 WHALE)  — intelligence, order book, analytics
+ *   Elite  (100,000 WHALE) — all features + premium data
+ *   Council (score ≥ 300)  — governance, proposals
+ *   Institutional          — commercial/API use requires licensing agreement: github.com/azagh72-creator
  *
  * ACCESS GATE: All tools require callerAddress (STX address).
  * WHALE balance is verified against Stacks mainnet before each call.
@@ -98,12 +99,42 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createJsonResponse, createErrorResponse } from "../utils/index.js";
-import { principalCV, serializeCV, stringAsciiCV, uintCV, deserializeCV, cvToJSON, ClarityType } from "@stacks/transactions";
+import { principalCV, serializeCV, stringAsciiCV, uintCV, deserializeCV, cvToJSON } from "@stacks/transactions";
 import { ipiGetAuditLog, ipiIsCoordinatedAttack, ipiSanitize, IPI_ATTACK_PHRASES, unblockSession } from "./session-guard.js";
 
 const BASE_URL  = "https://flying-whale-marketplace-production.up.railway.app";
 const EXEC_URL  = "https://whale-execution-engine-production.up.railway.app";
+const OPS_URL   = "https://fw-beat-match-engine-production.up.railway.app"; // Operations Hub v2.0.0
 const TIMEOUT_MS = 15_000;
+
+// ─── License Gate ─────────────────────────────────────────────────────────────
+// FW_LICENSE_KEY must be set in environment to use Flying Whale tools.
+// Obtain a license: github.com/azagh72-creator | zaghmout.btc
+// License tiers: Indie 100k sats/mo | Commercial 300k sats/mo | Platform: negotiate
+const FW_OWNER_ADDRESS = "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW";
+const FW_LICENSE_KEY   = process.env.FW_LICENSE_KEY ?? "";
+// Owner key: set FW_LICENSE_KEY=OWNER in your .env to activate owner bypass
+const FW_IS_OWNER      = FW_LICENSE_KEY === "OWNER" || FW_LICENSE_KEY === FW_OWNER_ADDRESS;
+
+function assertLicensed(): void {
+  if (FW_IS_OWNER) return; // owner always has access
+  if (!FW_LICENSE_KEY || FW_LICENSE_KEY.trim() === "") {
+    throw new Error(
+      `Flying Whale Infrastructure — License Required\n\n` +
+      `FW_LICENSE_KEY is not set. Flying Whale tools require a valid license key.\n\n` +
+      `License tiers:\n` +
+      `  Indie      : 100,000 sats/month\n` +
+      `  Commercial : 300,000 sats/month\n` +
+      `  Platform   : negotiated\n\n` +
+      `Obtain a license:\n` +
+      `  GitHub : github.com/azagh72-creator\n` +
+      `  BTC    : bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p\n` +
+      `  STX    : SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW\n\n` +
+      `Payment first. No trials. No exceptions.\n` +
+      `On-chain IP: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1`
+    );
+  }
+}
 
 // ─── WHALE Gate Configuration ─────────────────────────────────────────────────
 // WHALE token: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3
@@ -113,10 +144,12 @@ const WHALE_DECIMALS = 6;
 const HIRO_API = "https://api.hiro.so";
 
 // Access tier thresholds (in micro-WHALE, 6 decimals)
+// Updated 2026-04-13: thresholds raised — commercial use requires licensing agreement
+// Institutional/API access: github.com/azagh72-creator or zaghmout.btc
 const WHALE_THRESHOLDS = {
-  scout:  100n * 1_000_000n,      // 100 WHALE
-  agent:  1_000n * 1_000_000n,    // 1,000 WHALE
-  elite:  10_000n * 1_000_000n,   // 10,000 WHALE
+  scout:  1_000n * 1_000_000n,    // 1,000 WHALE
+  agent:  10_000n * 1_000_000n,   // 10,000 WHALE
+  elite:  100_000n * 1_000_000n,  // 100,000 WHALE
 } as const;
 
 type WhaleTier = keyof typeof WHALE_THRESHOLDS;
@@ -132,12 +165,8 @@ const SOVEREIGNTY_STAMP = {
   _owner_btc:      "bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p",
   _owner_eth:      "0xEAb576Ea7fd0c81eEb28f41783496a238C9Eb1Cf",
   _owner_sol:      "A8pFQ94ZAaENBGEEsa9udjM2cv6XTuXY9cwA5HUdJcfG",
-  _stack:          "Sovereign Agent OS v3.2.0 — 12-Layer Bitcoin AI Stack",
-  _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution|pact|market|sovereign",
-  _pact_v1:        "whale-pact-v1 — Autonomous Financial Contract | TX 83f5d6f1...",
-  _pact_v2:        "whale-pact-v2 — Program Layer (Sequential) | TX c9654182...",
-  _pact_v3:        "whale-pact-v3 — Market Layer (Open Bounty) | TX 073ccd55...",
-  _pact_v4:        "whale-pact-v4 — Sovereign Layer (DAO+Treasury+Dual-Chain) | TX 78ede889...",
+  _stack:          "Sovereign Agent OS v3.0.0 — 10-Layer Bitcoin AI Stack",
+  _layers:         "treasury|arb|scoring|ip|signals|verify|gate|registry|router|execution",
   _whale_token:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-v3 | 12.6M supply",
   _whale_gate:     "Scout 100 | Agent 1K | Elite 10K | Council score≥300. Buy: app.bitflow.finance Pool#42",
   _ip_registry:    "SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1 — 15 hashes registered",
@@ -145,7 +174,7 @@ const SOVEREIGNTY_STAMP = {
   _execution:      "whale-execution-v1 block 7537670 — first CoW engine on Stacks",
   _economy:        "x402 payments → whale-treasury-v1 buyback → WHALE burn → price support",
   _ipi_defense:    "IPI Defense v2 active — coordinated attack detection + sanitize mode",
-  _mcp_version:    "aibtc-mcp-server v1.53.1 | @aibtc/mcp-server on npm",
+  _mcp_version:    "aibtc-mcp-server v1.53.0 | @aibtc/mcp-server on npm",
 } as const;
 
 // ============================================================================
@@ -158,6 +187,7 @@ const SOVEREIGNTY_STAMP = {
  * No fallback — if the check fails, the call is blocked.
  */
 async function verifyWhaleAccess(callerAddress: string, tier: WhaleTier): Promise<void> {
+  assertLicensed();
   const url = `${HIRO_API}/extended/v1/address/${callerAddress}/balances`;
 
   const controller = new AbortController();
@@ -185,14 +215,22 @@ async function verifyWhaleAccess(callerAddress: string, tier: WhaleTier): Promis
   if (whaleBalance < threshold) {
     const held = (Number(whaleBalance) / Math.pow(10, WHALE_DECIMALS)).toLocaleString("en-US", { maximumFractionDigits: 2 });
     const required = (Number(threshold) / Math.pow(10, WHALE_DECIMALS)).toLocaleString("en-US");
+    // Approximate USD at ~$0.002/WHALE (recalibrate with: flying_whale_get_whale_price)
+    const pricePerWhale = 0.002;
+    const requiredNum = Number(threshold) / Math.pow(10, WHALE_DECIMALS);
+    const requiredUsd = (requiredNum * pricePerWhale).toFixed(2);
+    const shortfall = Number(threshold - whaleBalance) / Math.pow(10, WHALE_DECIMALS);
+    const shortfallUsd = (shortfall * pricePerWhale).toFixed(2);
     throw new Error(
       `WHALE Gate — Access Denied\n\n` +
-      `Tier required : ${tier.toUpperCase()} (${required} WHALE)\n` +
+      `Tier required : ${tier.toUpperCase()} — ${required} WHALE (~$${requiredUsd} USD)\n` +
       `Address       : ${callerAddress}\n` +
       `You hold      : ${held} WHALE\n` +
-      `Shortfall     : ${(Number(threshold - whaleBalance) / Math.pow(10, WHALE_DECIMALS)).toLocaleString("en-US")} WHALE\n\n` +
+      `Shortfall     : ${shortfall.toLocaleString("en-US")} WHALE (~$${shortfallUsd} USD)\n\n` +
+      `Tier pricing  : Scout $2.20 | Agent $22 | Elite $220 (at ~$0.002/WHALE)\n` +
       `Buy WHALE     : https://app.bitflow.finance — WHALE/wSTX Pool #42\n` +
       `Gate contract : SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-gate-v1\n` +
+      `Licensing     : github.com/azagh72-creator — institutional/commercial access requires agreement\n` +
       `No WHALE = No Access. No exceptions.`
     );
   }
@@ -202,11 +240,24 @@ async function verifyWhaleAccess(callerAddress: string, tier: WhaleTier): Promis
 // Helpers
 // ============================================================================
 
+/** Standard licensed headers for all Flying Whale API calls */
+function fwHeaders(callerAddress?: string): Record<string, string> {
+  assertLicensed();
+  return {
+    "Accept":        "application/json",
+    "X-Fw-License":  FW_LICENSE_KEY,
+    "X-Fw-Agent":    "aibtc-mcp-server - Flying Whale",
+    "X-Fw-Stack":    "Sovereign Agent OS v3.0.0",
+    ...(callerAddress ? { "X-Fw-Caller": callerAddress, "X-STX-Address": callerAddress } : {}),
+  };
+}
+
 async function marketplaceFetch(
   path: string,
   callerAddress: string,
   query?: Record<string, string | number | undefined>
 ): Promise<unknown> {
+  assertLicensed();
   const url = new URL(path, BASE_URL);
   // Always pass caller address so marketplace can verify WHALE tier and apply discount
   url.searchParams.set("address", callerAddress);
@@ -221,12 +272,7 @@ async function marketplaceFetch(
 
   try {
     const res = await fetch(url.toString(), {
-      headers: {
-        "Accept": "application/json",
-        "X-Fw-Agent": "aibtc-mcp-server - Flying Whale Marketplace Skill",
-        "X-Fw-Stack": "Multi-Layer Sovereignty Stack v2.0.0",
-        "X-Fw-Caller": callerAddress,
-      },
+      headers: fwHeaders(callerAddress),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -505,17 +551,17 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ---------- Intelligence — Agent tier ----------
+  // ---------- Marketplace Recent Intelligence — Agent tier ----------
 
   server.registerTool(
-    "flying_whale_get_intelligence",
+    "flying_whale_get_marketplace_intel",
     {
       description:
-        "Get intelligence reports and market analytics from Flying Whale Sovereign Agent OS " +
+        "Get recent marketplace intelligence from Flying Whale Sovereign Agent OS " +
         "(COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
-        "Returns trend data, skill performance metrics, WHALE pool analytics, and on-chain insights. " +
+        "Returns skill trend data, performance metrics, WHALE pool analytics, and on-chain insights. " +
         "WHALE gate enforced — Agent tier (1,000 WHALE) required. " +
-        "Execution API: https://whale-execution-api-production.up.railway.app",
+        "For sovereign intelligence signals (quantum/macro/security beats), use flying_whale_get_intelligence instead.",
       inputSchema: {
         callerAddress: z
           .string()
@@ -758,9 +804,9 @@ export function registerFlyingWhaleTools(server: McpServer): void {
             stx_usd: stxUsd,
           },
           tiers_usd: {
-            scout: (100 * priceUsd).toFixed(4),
-            agent: (1_000 * priceUsd).toFixed(4),
-            elite: (10_000 * priceUsd).toFixed(4),
+            scout: (1_000 * priceUsd).toFixed(4),
+            agent: (10_000 * priceUsd).toFixed(4),
+            elite: (100_000 * priceUsd).toFixed(4),
           },
           links: {
             buy: "https://app.bitflow.finance",
@@ -2044,7 +2090,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const url = `${EXEC_URL}/api/route/quote?token_in=${encodeURIComponent(tokenIn)}&token_out=${encodeURIComponent(tokenOut)}&amount=${encodeURIComponent(amount)}`;
         const res = await fetch(url, {
-          headers: { "X-STX-Address": callerAddress },
+          headers: fwHeaders(callerAddress),
           signal:  AbortSignal.timeout(TIMEOUT_MS),
         });
 
@@ -2119,10 +2165,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const res = await fetch(`${EXEC_URL}/api/order/submit`, {
           method:  "POST",
-          headers: {
-            "Content-Type":  "application/json",
-            "X-STX-Address": callerAddress,
-          },
+          headers: { ...fwHeaders(callerAddress), "Content-Type": "application/json" },
           body: JSON.stringify({
             token_in:       tokenIn,
             token_out:      tokenOut,
@@ -2192,10 +2235,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const res = await fetch(`${EXEC_URL}/api/order/${encodeURIComponent(orderId)}/boost`, {
           method:  "POST",
-          headers: {
-            "Content-Type":  "application/json",
-            "X-STX-Address": callerAddress,
-          },
+          headers: { ...fwHeaders(callerAddress), "Content-Type": "application/json" },
           body:   JSON.stringify({ whale_amount: whaleAmount }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
@@ -2244,7 +2284,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const res = await fetch(`${EXEC_URL}/api/order/${encodeURIComponent(orderId)}`, {
           method:  "DELETE",
-          headers: { "X-STX-Address": callerAddress },
+          headers: fwHeaders(callerAddress),
           signal:  AbortSignal.timeout(TIMEOUT_MS),
         });
 
@@ -2294,7 +2334,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
 
         const url = `${EXEC_URL}/api/book/depth?token_in=${encodeURIComponent(tokenIn)}&token_out=${encodeURIComponent(tokenOut)}`;
         const res = await fetch(url, {
-          headers: { "X-STX-Address": callerAddress },
+          headers: fwHeaders(callerAddress),
           signal:  AbortSignal.timeout(TIMEOUT_MS),
         });
 
@@ -2341,7 +2381,7 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         await verifyWhaleAccess(callerAddress, "elite");
 
         const res = await fetch(`${EXEC_URL}/api/stats`, {
-          headers: { "X-STX-Address": callerAddress },
+          headers: fwHeaders(callerAddress),
           signal:  AbortSignal.timeout(TIMEOUT_MS),
         });
 
@@ -2396,6 +2436,8 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     },
     async ({ action, content }) => {
       try {
+        assertLicensed();
+
         if (action === "unblock") {
           unblockSession(server);
           return createJsonResponse({
@@ -2462,7 +2504,313 @@ export function registerFlyingWhaleTools(server: McpServer): void {
     }
   );
 
-  // ============================================================================
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FLYING WHALE INTELLIGENCE HUB — Sovereign intelligence, no editors, no caps
+  // Operations Hub v2.0.0 — https://fw-beat-match-engine-production.up.railway.app
+  // 5 beats: quantum-threats | agent-economy | sovereign-stack | bitcoin-macro | network-security
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  server.registerTool(
+    "flying_whale_get_intelligence",
+    {
+      description:
+        "Get sovereign intelligence signals from Flying Whale Intelligence Hub " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
+        "5 exclusive beats not covered by aibtc.news: quantum-threats (secp256k1 exposure, PQC), " +
+        "agent-economy (x402 flows, MCP economics), sovereign-stack (Stacks contracts, whale infra), " +
+        "bitcoin-macro (Wyckoff regime, ETF flows), network-security (IPI patterns, exploits). " +
+        "No editors. No caps. No cooldowns. Signals published by zaghmout.btc with on-chain IP proof. " +
+        "Use beat='latest' for free preview (3 per beat). Licensed access required for full feed. " +
+        "Operations Hub: https://fw-beat-match-engine-production.up.railway.app",
+      inputSchema: {
+        beat: z
+          .enum(["latest", "quantum-threats", "agent-economy", "sovereign-stack", "bitcoin-macro", "network-security", "feed", "brief"])
+          .describe(
+            "Which intelligence to fetch: " +
+            "'latest' = free preview (3 newest per beat), " +
+            "'quantum-threats' | 'agent-economy' | 'sovereign-stack' | 'bitcoin-macro' | 'network-security' = specific beat, " +
+            "'feed' = full chronological feed (licensed), " +
+            "'brief' = today's compiled brief (licensed)"
+          ),
+        limit: z
+          .number()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe("Max signals to return (default: 10, max: 50). Applies to beat-specific queries."),
+        date: z
+          .string()
+          .optional()
+          .describe("Date for brief compilation (YYYY-MM-DD). Only used when beat='brief'."),
+      },
+    },
+    async ({ beat, limit, date }) => {
+      assertLicensed();
+      try {
+        const headers: Record<string, string> = {
+          "X-Fw-License": FW_LICENSE_KEY || "OWNER",
+          "X-Fw-Caller":  FW_OWNER_ADDRESS,
+          "User-Agent":   "FlyingWhale-MCP/2.0.0",
+        };
+
+        let url: string;
+        if (beat === "latest") {
+          url = `${OPS_URL}/intelligence/latest`;
+        } else if (beat === "feed") {
+          const params = new URLSearchParams();
+          if (limit) params.set("limit", String(limit));
+          url = `${OPS_URL}/intelligence/feed?${params}`;
+        } else if (beat === "brief") {
+          const params = new URLSearchParams();
+          if (date) params.set("date", date);
+          url = `${OPS_URL}/intelligence/brief?${params}`;
+        } else {
+          const params = new URLSearchParams();
+          if (limit) params.set("limit", String(limit));
+          url = `${OPS_URL}/intelligence/${beat}?${params}`;
+        }
+
+        const res = await fetch(url, {
+          headers,
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        const data = await res.json() as Record<string, unknown>;
+
+        if (res.status === 402) {
+          return createJsonResponse({
+            error:       "Payment required — subscribe for full intelligence access",
+            amount_sats: data.amount_sats,
+            pay_to_btc:  "bc1qdfm56pmmq40me84aau2fts3725ghzqlwf6ys7p",
+            pay_to_stx:  FW_OWNER_ADDRESS,
+            hint:        "Set FW_LICENSE_KEY to gain full access, or use beat='latest' for free preview.",
+            ...SOVEREIGNTY_STAMP,
+          });
+        }
+
+        return createJsonResponse({
+          ...data,
+          _ops_hub:    "Flying Whale Operations Hub v2.0.0",
+          _beat_query: beat,
+          ...SOVEREIGNTY_STAMP,
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_get_brief",
+    {
+      description:
+        "Get Flying Whale daily intelligence brief — compiled summary of all 5 sovereign beats for a given date. " +
+        "Returns signal count, beat breakdown, and compiled insights. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
+        "Licensed access required.",
+      inputSchema: {
+        date: z
+          .string()
+          .optional()
+          .describe("Date to compile brief for (YYYY-MM-DD). Defaults to today."),
+      },
+    },
+    async ({ date }) => {
+      assertLicensed();
+      try {
+        const params = new URLSearchParams();
+        if (date) params.set("date", date);
+
+        const res = await fetch(`${OPS_URL}/intelligence/brief?${params}`, {
+          headers: {
+            "X-Fw-License": FW_LICENSE_KEY || "OWNER",
+            "X-Fw-Caller":  FW_OWNER_ADDRESS,
+            "User-Agent":   "FlyingWhale-MCP/2.0.0",
+          },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+
+        const data = await res.json() as Record<string, unknown>;
+        return createJsonResponse({ ...data as object, ...SOVEREIGNTY_STAMP });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FLYING WHALE WORK MARKET ENGINE
+  // Sovereign autonomous task system — WHALE as fuel
+  // IP: whale-ip-store-v1 TX 80d2a9e8c6b8d6632a4ee7331c3fe1b6c5d0db334d4824f4eaca389c54e53758
+  // Flow: Work → Execution → Profit → WHALE → Control
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  server.registerTool(
+    "flying_whale_work_dashboard",
+    {
+      description:
+        "Get the Flying Whale Work Market Engine dashboard — sovereign autonomous task system. " +
+        "Shows active jobs, WHALE rewards distributed, agent leaderboard, and task queue stats. " +
+        "No external bounty supply needed — tasks auto-generated every 24h. " +
+        "WHALE = وقود العمل (fuel of work). " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
+        "Operations Hub: https://fw-beat-match-engine-production.up.railway.app",
+      inputSchema: {},
+    },
+    async () => {
+      assertLicensed();
+      try {
+        const res = await fetch(`${OPS_URL}/work/dashboard`, {
+          headers: { "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": FW_OWNER_ADDRESS },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_tasks",
+    {
+      description:
+        "Browse the Flying Whale Work Market Engine task queue. " +
+        "Tasks are auto-generated: content briefs, market watches, security scans, arb hunts, verifications. " +
+        "WHALE required to access queue (min 100 WHALE = Scout tier). " +
+        "Higher tier = higher-reward tasks. Burn WHALE to boost priority (10% rebate). " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        address: z.string().min(1).describe("Your STX address — WHALE balance verified on-chain"),
+        status: z.enum(["open", "claimed", "submitted", "completed", "expired"]).optional()
+          .describe("Filter by task status (default: open)"),
+        type: z.enum(["signal_file", "market_watch", "content_brief", "security_scan", "arb_hunt", "verification"]).optional()
+          .describe("Filter by task type"),
+        beat: z.enum(["quantum-threats", "agent-economy", "sovereign-stack", "bitcoin-macro", "network-security"]).optional()
+          .describe("Filter by intelligence beat"),
+        limit: z.number().min(1).max(50).optional().describe("Max tasks to return (default: 20)"),
+      },
+    },
+    async ({ address, status, type, beat, limit }) => {
+      assertLicensed();
+      try {
+        const params = new URLSearchParams({ address });
+        if (status) params.set("status", status);
+        if (type)   params.set("type", type);
+        if (beat)   params.set("beat", beat);
+        if (limit)  params.set("limit", String(limit));
+        const res = await fetch(`${OPS_URL}/work/tasks?${params}`, {
+          headers: { "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": address },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_claim",
+    {
+      description:
+        "Claim a task from the Flying Whale Work Market Engine. " +
+        "Max 3 agents per task — first to submit approved work wins the WHALE reward. " +
+        "WHALE balance verified before claiming. Claim locks your spot in the competition. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        address: z.string().min(1).describe("Your STX address"),
+        task_id: z.string().min(1).describe("Task ID to claim (from flying_whale_work_tasks)"),
+      },
+    },
+    async ({ address, task_id }) => {
+      assertLicensed();
+      try {
+        const res = await fetch(`${OPS_URL}/work/tasks/${task_id}/claim`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": address },
+          body: JSON.stringify({ address }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_submit",
+    {
+      description:
+        "Submit completed work for a claimed task in the Flying Whale Work Market Engine. " +
+        "Proof hash (SHA-256) is auto-computed and stored as on-chain anchor. " +
+        "First approved submission earns the WHALE reward. Auto-approved after 24h if no owner review. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        address:  z.string().min(1).describe("Your STX address (must have claimed the task)"),
+        task_id:  z.string().min(1).describe("Task ID to submit for"),
+        content:  z.string().min(50).max(5000).describe("Your work product — min 50 chars, max 5000 chars"),
+      },
+    },
+    async ({ address, task_id, content }) => {
+      assertLicensed();
+      try {
+        const res = await fetch(`${OPS_URL}/work/tasks/${task_id}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": address },
+          body: JSON.stringify({ address, content }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_my",
+    {
+      description:
+        "View your Flying Whale Work Market Engine profile — active claims, completed tasks, " +
+        "WHALE earnings, pending rewards, and earnings history. " +
+        "Track your sovereign work record with on-chain proof hashes. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        address: z.string().min(1).describe("Your STX address"),
+      },
+    },
+    async ({ address }) => {
+      assertLicensed();
+      try {
+        const res = await fetch(`${OPS_URL}/work/my?address=${address}`, {
+          headers: { "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": address },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_leaderboard",
+    {
+      description:
+        "Flying Whale Work Market Engine leaderboard — top agents by WHALE earnings. " +
+        "Shows completed tasks, WHALE earned, tier, and rank. " +
+        "Compete, execute, earn. Sovereignty is a sport. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        limit: z.number().min(1).max(50).optional().describe("Number of top agents to return (default: 20)"),
+      },
+    },
+    async ({ limit }) => {
+      assertLicensed();
+      try {
+        const params = new URLSearchParams();
+        if (limit) params.set("limit", String(limit));
+        const res = await fetch(`${OPS_URL}/work/leaderboard?${params}`, {
+          headers: { "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": FW_OWNER_ADDRESS },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
   // whale-pact-v1 — Autonomous Financial Contract Layer
   // COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54
   // Deploy TX: 83f5d6f18871c937ce9feae80b196bda179654fd6cf5fb7f8b69452483281f22
