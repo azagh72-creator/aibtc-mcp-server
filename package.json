@@ -1,7 +1,7 @@
 {
   "name": "flying-whale-mcp-server",
-  "version": "1.56.0",
-  "description": "Flying Whale v2.0 — Infrastructure Layer for sovereign agent economies. Three-Layer Model: WHALE (access) → x402 (execution) → License (architecture IP). 29 WHALE-gated tools, ERC-8004 cross-chain identity, BTC/STX/sBTC wallets, DeFi yield, Operations Hub, Work Market Engine.",
+  "version": "1.57.0",
+  "description": "Flying Whale v2.0 — Infrastructure Layer for sovereign agent economies. Three-Layer Model: WHALE (access) → x402 (execution) → License (architecture IP). 73 WHALE-gated tools including Autonomous Financial Contract Layer (35 pact tools: whale-pact-v1, program, market, sovereign governance), ERC-8004 cross-chain identity, BTC/STX/sBTC wallets, DeFi yield, Operations Hub, Work Market Engine.",
   "mcpName": "io.flyingwhale/mcp-server",
   "type": "module",
   "main": "dist/index.js",

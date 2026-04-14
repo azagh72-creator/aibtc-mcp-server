@@ -174,7 +174,7 @@ const SOVEREIGNTY_STAMP = {
   _execution:      "whale-execution-v1 block 7537670 — first CoW engine on Stacks",
   _economy:        "x402 payments → whale-treasury-v1 buyback → WHALE burn → price support",
   _ipi_defense:    "IPI Defense v2 active — coordinated attack detection + sanitize mode",
-  _mcp_version:    "aibtc-mcp-server v1.53.0 | @aibtc/mcp-server on npm",
+  _mcp_version:    "aibtc-mcp-server v1.57.0 | @aibtc/mcp-server on npm",
 } as const;
 
 // ============================================================================
