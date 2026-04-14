@@ -2637,4 +2637,177 @@ export function registerFlyingWhaleTools(server: McpServer): void {
       }
     }
   );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FLYING WHALE WORK MARKET ENGINE
+  // Sovereign autonomous task system — WHALE as fuel
+  // IP: whale-ip-store-v1 TX 80d2a9e8c6b8d6632a4ee7331c3fe1b6c5d0db334d4824f4eaca389c54e53758
+  // Flow: Work → Execution → Profit → WHALE → Control
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  server.registerTool(
+    "flying_whale_work_dashboard",
+    {
+      description:
+        "Get the Flying Whale Work Market Engine dashboard — sovereign autonomous task system. " +
+        "Shows active jobs, WHALE rewards distributed, agent leaderboard, and task queue stats. " +
+        "No external bounty supply needed — tasks auto-generated every 24h. " +
+        "WHALE = وقود العمل (fuel of work). " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54). " +
+        "Operations Hub: https://fw-beat-match-engine-production.up.railway.app",
+      inputSchema: {},
+    },
+    async () => {
+      assertLicensed();
+      try {
+        const res = await fetch(`${OPS_URL}/work/dashboard`, {
+          headers: { "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": FW_OWNER_ADDRESS },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_tasks",
+    {
+      description:
+        "Browse the Flying Whale Work Market Engine task queue. " +
+        "Tasks are auto-generated: content briefs, market watches, security scans, arb hunts, verifications. " +
+        "WHALE required to access queue (min 100 WHALE = Scout tier). " +
+        "Higher tier = higher-reward tasks. Burn WHALE to boost priority (10% rebate). " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        address: z.string().min(1).describe("Your STX address — WHALE balance verified on-chain"),
+        status: z.enum(["open", "claimed", "submitted", "completed", "expired"]).optional()
+          .describe("Filter by task status (default: open)"),
+        type: z.enum(["signal_file", "market_watch", "content_brief", "security_scan", "arb_hunt", "verification"]).optional()
+          .describe("Filter by task type"),
+        beat: z.enum(["quantum-threats", "agent-economy", "sovereign-stack", "bitcoin-macro", "network-security"]).optional()
+          .describe("Filter by intelligence beat"),
+        limit: z.number().min(1).max(50).optional().describe("Max tasks to return (default: 20)"),
+      },
+    },
+    async ({ address, status, type, beat, limit }) => {
+      assertLicensed();
+      try {
+        const params = new URLSearchParams({ address });
+        if (status) params.set("status", status);
+        if (type)   params.set("type", type);
+        if (beat)   params.set("beat", beat);
+        if (limit)  params.set("limit", String(limit));
+        const res = await fetch(`${OPS_URL}/work/tasks?${params}`, {
+          headers: { "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": address },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_claim",
+    {
+      description:
+        "Claim a task from the Flying Whale Work Market Engine. " +
+        "Max 3 agents per task — first to submit approved work wins the WHALE reward. " +
+        "WHALE balance verified before claiming. Claim locks your spot in the competition. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        address: z.string().min(1).describe("Your STX address"),
+        task_id: z.string().min(1).describe("Task ID to claim (from flying_whale_work_tasks)"),
+      },
+    },
+    async ({ address, task_id }) => {
+      assertLicensed();
+      try {
+        const res = await fetch(`${OPS_URL}/work/tasks/${task_id}/claim`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": address },
+          body: JSON.stringify({ address }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_submit",
+    {
+      description:
+        "Submit completed work for a claimed task in the Flying Whale Work Market Engine. " +
+        "Proof hash (SHA-256) is auto-computed and stored as on-chain anchor. " +
+        "First approved submission earns the WHALE reward. Auto-approved after 24h if no owner review. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        address:  z.string().min(1).describe("Your STX address (must have claimed the task)"),
+        task_id:  z.string().min(1).describe("Task ID to submit for"),
+        content:  z.string().min(50).max(5000).describe("Your work product — min 50 chars, max 5000 chars"),
+      },
+    },
+    async ({ address, task_id, content }) => {
+      assertLicensed();
+      try {
+        const res = await fetch(`${OPS_URL}/work/tasks/${task_id}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": address },
+          body: JSON.stringify({ address, content }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_my",
+    {
+      description:
+        "View your Flying Whale Work Market Engine profile — active claims, completed tasks, " +
+        "WHALE earnings, pending rewards, and earnings history. " +
+        "Track your sovereign work record with on-chain proof hashes. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        address: z.string().min(1).describe("Your STX address"),
+      },
+    },
+    async ({ address }) => {
+      assertLicensed();
+      try {
+        const res = await fetch(`${OPS_URL}/work/my?address=${address}`, {
+          headers: { "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": address },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_work_leaderboard",
+    {
+      description:
+        "Flying Whale Work Market Engine leaderboard — top agents by WHALE earnings. " +
+        "Shows completed tasks, WHALE earned, tier, and rank. " +
+        "Compete, execute, earn. Sovereignty is a sport. " +
+        "(© 2026 Flying Whale — zaghmout.btc | ERC-8004 #54)",
+      inputSchema: {
+        limit: z.number().min(1).max(50).optional().describe("Number of top agents to return (default: 20)"),
+      },
+    },
+    async ({ limit }) => {
+      assertLicensed();
+      try {
+        const params = new URLSearchParams();
+        if (limit) params.set("limit", String(limit));
+        const res = await fetch(`${OPS_URL}/work/leaderboard?${params}`, {
+          headers: { "X-Fw-License": FW_LICENSE_KEY || "OWNER", "X-Fw-Caller": FW_OWNER_ADDRESS },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        return createJsonResponse(await res.json() as object);
+      } catch (error) { return createErrorResponse(error); }
+    }
+  );
 }
