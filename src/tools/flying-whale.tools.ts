@@ -184,7 +184,8 @@ const SOVEREIGNTY_STAMP = {
   _economy:        "x402 payments → whale-treasury-v1 buyback → WHALE burn → price support",
   _ipi_defense:    "IPI Defense v2 active — coordinated attack detection + sanitize mode",
   _fortress:       "Behavioral Fortress v1.0 — 5-layer: fingerprint | honeypot | noise | watermark | pact-gate",
-  _mcp_version:    "aibtc-mcp-server v1.58.0 | flying-whale-mcp-server on npm",
+  _mcp_version:    "aibtc-mcp-server v1.60.0 | flying-whale-mcp-server on npm",
+  _classifieds:    "Sovereign Classifieds v1.0 — pay-to-list x402 | 7-day | 2500 microSTX | no gatekeepers",
 } as const;
 
 // ============================================================================
@@ -5212,6 +5213,141 @@ export function registerFlyingWhaleTools(server: McpServer): void {
         assertLicensed();
         const payload = honeypotResponse("flying_whale_edge_strategy", callerAddress ?? "unknown");
         return createJsonResponse(payload);
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // ── Classifieds ────────────────────────────────────────────────────────────
+
+  server.registerTool(
+    "flying_whale_classifieds_list",
+    {
+      description:
+        "List active classified listings on the Flying Whale Sovereign Marketplace. " +
+        "No gatekeepers — listings are paid via x402 and distributed to 771 AIBTC agents. " +
+        "Filter by category: tool | contract | service | data | agent | bounty | other. " +
+        "Scout tier required.",
+      inputSchema: {
+        callerAddress: z.string().describe(CALLER_DESC),
+        category: z.string().optional().describe("Filter by category"),
+        limit: z.number().optional().describe("Max results (default 20, max 50)"),
+        offset: z.number().optional().describe("Pagination offset"),
+      },
+    },
+    async ({ callerAddress, category, limit, offset }: {
+      callerAddress: string;
+      category?: string;
+      limit?: number;
+      offset?: number;
+    }) => {
+      try {
+        assertLicensed();
+        await verifyWhaleAccess(callerAddress, "scout");
+        const params = new URLSearchParams();
+        if (category) params.set("category", category);
+        if (limit) params.set("limit", String(limit));
+        if (offset) params.set("offset", String(offset));
+        const res = await fetch(`${OPS_URL}/classifieds?${params}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+        const data = await res.json();
+        return createJsonResponse({ ...data, ...SOVEREIGNTY_STAMP });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_classifieds_get",
+    {
+      description:
+        "Get a single classified listing by ID from Flying Whale Sovereign Marketplace. " +
+        "Returns full listing details including contact, price ask, distribution status. " +
+        "Scout tier required.",
+      inputSchema: {
+        callerAddress: z.string().describe(CALLER_DESC),
+        classified_id: z.string().describe("Classified listing ID (e.g. fw-cl-...)"),
+      },
+    },
+    async ({ callerAddress, classified_id }: { callerAddress: string; classified_id: string }) => {
+      try {
+        assertLicensed();
+        await verifyWhaleAccess(callerAddress, "scout");
+        const res = await fetch(`${OPS_URL}/classifieds/${classified_id}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+        if (!res.ok) return createErrorResponse(new Error(`Classified not found: ${classified_id}`));
+        const data = await res.json();
+        return createJsonResponse({ ...data, ...SOVEREIGNTY_STAMP });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_classifieds_submit",
+    {
+      description:
+        "Submit a new classified listing to the Flying Whale Sovereign Marketplace. " +
+        "Cost: 2500 microSTX (x402 payment — handled automatically by the MCP server wallet). " +
+        "Listing is live for 7 days and distributed immediately to 771 AIBTC agents via Intelligence Hub + MCP feed. " +
+        "No editors. No approval queue. No gatekeepers. " +
+        "Categories: tool | contract | service | data | agent | bounty | other. " +
+        "Agent tier required.",
+      inputSchema: {
+        callerAddress: z.string().describe(CALLER_DESC),
+        title: z.string().describe("Listing title (max 120 chars)"),
+        body: z.string().describe("Full listing description (max 1000 chars)"),
+        category: z.string().describe("Category: tool | contract | service | data | agent | bounty | other"),
+        contact: z.string().describe("Contact info: BNS name, STX address, URL, or email"),
+        price_ask: z.string().optional().describe("Optional asking price (e.g. '50,000 WHALE', '0.01 sBTC', 'negotiable')"),
+        submitted_by: z.string().describe("Your STX address (for attribution and on-chain proof)"),
+      },
+    },
+    async ({ callerAddress, title, body, category, contact, price_ask, submitted_by }: {
+      callerAddress: string;
+      title: string;
+      body: string;
+      category: string;
+      contact: string;
+      price_ask?: string;
+      submitted_by: string;
+    }) => {
+      try {
+        assertLicensed();
+        await verifyWhaleAccess(callerAddress, "agent");
+        const res = await fetch(`${OPS_URL}/classifieds`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, body, category, contact, price_ask, submitted_by }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        const data = await res.json();
+        return createJsonResponse({ ...data, ...SOVEREIGNTY_STAMP });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "flying_whale_classifieds_stats",
+    {
+      description:
+        "Get Flying Whale Sovereign Classifieds marketplace statistics. " +
+        "Active listings, total views, breakdown by category, listing price, distribution reach. " +
+        "Scout tier required.",
+      inputSchema: {
+        callerAddress: z.string().describe(CALLER_DESC),
+      },
+    },
+    async ({ callerAddress }: { callerAddress: string }) => {
+      try {
+        assertLicensed();
+        await verifyWhaleAccess(callerAddress, "scout");
+        const res = await fetch(`${OPS_URL}/classifieds/stats`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+        const data = await res.json();
+        return createJsonResponse({ ...data, ...SOVEREIGNTY_STAMP });
       } catch (error) {
         return createErrorResponse(error);
       }
