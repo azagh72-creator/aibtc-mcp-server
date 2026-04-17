@@ -6,3 +6,4 @@ dist/
 deprecation/
 .planning/
 .planning-archive*/
+fw-*.cjs
