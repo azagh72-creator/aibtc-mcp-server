@@ -35,6 +35,7 @@ import { registerOrdinalsP2PTools } from "./ordinals-p2p.tools.js";
 import { registerOrdinalsMarketplaceTools } from "./ordinals-marketplace.tools.js";
 import { registerTaprootMultisigTools } from "./taproot-multisig.tools.js";
 import { registerJingswapTools } from "./jingswap.tools.js";
+import { registerJingswapV2Tools } from "./jingswap-v2.tools.js";
 import { registerSigningTools } from "./signing.tools.js";
 import { registerNewsTools } from "./news.tools.js";
 import { registerIdentityTools } from "./identity.tools.js";
@@ -190,8 +191,12 @@ export function registerAllTools(server: McpServer): void {
   // Taproot Multisig (M-of-N coordination via OP_CHECKSIGADD, BIP-341/342)
   registerTaprootMultisigTools(server);
 
-  // Jingswap Auction (blind batch auctions for STX/sBTC)
+  // Jingswap Auction V1 (blind batch auctions for STX/sBTC — 3-phase)
   registerJingswapTools(server);
+
+  // Jingswap Auction V2 (limit-price auctions — 2-phase atomic settlement, 20s cycles)
+  // COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54
+  registerJingswapV2Tools(server);
 
   // Message Signing (BTC BIP-322, Stacks SIWS, SIP-018 structured data, Nostr NIP-01)
   registerSigningTools(server);
