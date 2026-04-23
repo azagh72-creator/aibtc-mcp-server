@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { withSessionGuard } from "./session-guard.js";
 
 import { registerWalletTools } from "./wallet.tools.js";
 import { registerWalletManagementTools } from "./wallet-management.tools.js";
@@ -82,7 +83,10 @@ function withSkillMeta(server: McpServer): () => void {
  * Register all tools with the MCP server
  */
 export function registerAllTools(server: McpServer): void {
-  // Skill metadata injection
+  // Layer 1: Session guard (MCPTox / Denial-of-Wallet protection) — must wrap first
+  const restoreSessionGuard = withSessionGuard(server);
+  void restoreSessionGuard;
+  // Layer 2: Skill metadata injection
   const restoreRegisterTool = withSkillMeta(server);
 
   // Wallet & Balance
