@@ -44,14 +44,12 @@ import { registerBountyScannerTools } from "./bounty-scanner.tools.js";
 import { registerRunesTools } from "./runes.tools.js";
 import { registerInboxTools } from "./inbox.tools.js";
 import { registerArxivResearchTools } from "./arxiv-research.tools.js";
-import { registerFlyingWhaleTools } from "./flying-whale.tools.js";
 import { registerChildInscriptionTools } from "./child-inscription.tools.js";
 import { registerErc8004Tools } from "./erc8004.tools.js";
 import { registerOrdinalsTools } from "./ordinals.tools.js";
 import { registerPsbtTools } from "./psbt.tools.js";
 import { registerSettingsTools } from "./settings.tools.js";
 import { getSkillForTool } from "./skill-mappings.js";
-import { withSessionGuard } from "./session-guard.js";
 
 /**
  * Wraps server.registerTool to inject _meta.skill from TOOL_SKILL_MAP when a mapping exists.
@@ -84,12 +82,8 @@ function withSkillMeta(server: McpServer): () => void {
  * Register all tools with the MCP server
  */
 export function registerAllTools(server: McpServer): void {
-  // Layer 1: Session guard (MCPTox / Denial-of-Wallet protection) — must wrap first
-  const restoreSessionGuard = withSessionGuard(server);
-  // Layer 2: Skill metadata injection
+  // Skill metadata injection
   const restoreRegisterTool = withSkillMeta(server);
-
-  void restoreSessionGuard; // cleanup available if needed
 
   // Wallet & Balance
   registerWalletTools(server);
@@ -219,9 +213,6 @@ export function registerAllTools(server: McpServer): void {
 
   // arXiv Research (public arXiv Atom API — paper search and digest compilation)
   registerArxivResearchTools(server);
-
-  // Flying Whale Marketplace (skill discovery, bounties, order book, intelligence)
-  registerFlyingWhaleTools(server);
 
   // Child Inscriptions (parent-child provenance via OP_RETURN)
   registerChildInscriptionTools(server);
