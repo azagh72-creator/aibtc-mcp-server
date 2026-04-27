@@ -74,7 +74,7 @@ import type { Network } from "../config/networks.js";
 import { getContracts, parseContractId } from "../config/contracts.js";
 import { MempoolApi } from "./mempool-api.js";
 import type { UTXO } from "./mempool-api.js";
-import { OrdinalIndexer } from "./ordinal-indexer.js";
+import { UnisatIndexer } from "./unisat-indexer.js";
 
 /**
  * Result from generating a deposit address
@@ -274,22 +274,17 @@ export class SbtcDepositService {
         // Power user mode: use all UTXOs
         utxos = await this.mempoolApi.getUtxos(bitcoinAddress);
       } else {
-        // Safe mode: only use cardinal UTXOs (no inscriptions)
-        // On testnet, Hiro API is not available, so fall back to all UTXOs
-        if (this.network === "testnet") {
-          utxos = await this.mempoolApi.getUtxos(bitcoinAddress);
-        } else {
-          const indexer = new OrdinalIndexer(this.network);
-          utxos = await indexer.getCardinalUtxos(bitcoinAddress);
-        }
+        // Safe mode: only use cardinal UTXOs (no inscriptions or runes)
+        const indexer = new UnisatIndexer(this.network);
+        utxos = await indexer.getCardinalUtxos(bitcoinAddress);
       }
 
       if (utxos.length === 0) {
         const errorMsg = includeOrdinals
           ? `No UTXOs found for address ${bitcoinAddress}`
-          : `No cardinal (non-inscription) UTXOs available for deposit. ` +
-            `You may have ordinal UTXOs (containing inscriptions). ` +
-            `Use includeOrdinals=true to override ordinal safety (WARNING: may destroy inscriptions).`;
+          : `No cardinal UTXOs available for deposit. ` +
+            `Your remaining UTXOs may carry inscriptions or runes. ` +
+            `Use includeOrdinals=true to override safety (WARNING: may destroy inscriptions or runes).`;
         throw new Error(errorMsg);
       }
 
