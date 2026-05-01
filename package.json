@@ -1,6 +1,6 @@
 {
   "name": "flying-whale-mcp-server",
-  "version": "1.61.0",
+  "version": "2.0.0",
   "description": "Flying Whale v2.0 — Open Infrastructure Layer for all of humanity. 429 tools: Bitcoin L1, Stacks L2, sBTC, DeFi (ALEX, Zest, Bitflow, Styx), Ordinals, Runes, Nostr, ERC-8004 identity, x402 payments, AI scaffolding. MIT. No gates. Cosmic energy.",
   "mcpName": "io.flyingwhale/mcp-server",
   "type": "module",
