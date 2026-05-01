@@ -36,12 +36,92 @@ import {
   emitCanonicalPaymentPollLogs,
   emitPaymentLog,
 } from "../utils/x402-payment-logging.js";
+import {
+  parseL402Challenge,
+  buildL402AuthHeader,
+  getCachedL402Auth,
+  cacheL402Auth,
+  invalidateL402Auth,
+} from "../utils/l402-protocol.js";
+import { getLightningManager } from "./lightning-manager.js";
+import { decode as decodeBolt11 } from "light-bolt11-decoder";
+
+/**
+ * Maximum Lightning invoice amount (in sats) the L402 interceptor will pay
+ * without user confirmation. Overridable via the L402_MAX_SATS_PER_INVOICE env
+ * var. Defaults to 10_000 sats (~$5 at $50k/BTC) — a malicious server can
+ * return a BOLT-11 invoice for an arbitrary amount, so this cap bounds the
+ * blast radius when the Lightning wallet is unlocked.
+ *
+ * If the env var is set to a non-numeric, non-finite, or non-positive value,
+ * we log a warning to stderr and fall back to the default — `Number(undefined)`
+ * is NaN, and `amountSats > NaN` is always false, which would silently disable
+ * the cap and allow arbitrary-amount invoices through.
+ */
+const DEFAULT_L402_MAX_SATS = 10000;
+function parseSatsCap(envName: string, fallback: number): number {
+  const raw = process.env[envName];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.error(
+      `[L402] Invalid ${envName}="${raw}", falling back to ${fallback}`
+    );
+    return fallback;
+  }
+  return parsed;
+}
+const L402_MAX_SATS_PER_INVOICE = parseSatsCap(
+  "L402_MAX_SATS_PER_INVOICE",
+  DEFAULT_L402_MAX_SATS
+);
 
 // Track payment attempts per client instance (auto-cleanup via WeakMap)
 const paymentAttempts: WeakMap<AxiosInstance, number> = new WeakMap();
 
 // Track 429 retry counts per client instance
 const rateLimitRetries: WeakMap<AxiosInstance, number> = new WeakMap();
+
+// Track L402 payment attempts per {client, request URL} so a retry limit for
+// endpoint A doesn't bleed into endpoint B. A single WeakMap<AxiosInstance,
+// Map<string, number>> is sufficient because the per-instance map is garbage
+// collected with the axios client.
+const l402Attempts: WeakMap<AxiosInstance, Map<string, number>> = new WeakMap();
+
+/**
+ * Look up the per-URL L402 attempt count for a client instance.
+ */
+function getL402AttemptCount(instance: AxiosInstance, key: string): number {
+  return l402Attempts.get(instance)?.get(key) ?? 0;
+}
+
+/**
+ * Increment the per-URL L402 attempt count for a client instance.
+ */
+function incrementL402AttemptCount(
+  instance: AxiosInstance,
+  key: string
+): number {
+  let map = l402Attempts.get(instance);
+  if (!map) {
+    map = new Map();
+    l402Attempts.set(instance, map);
+  }
+  const next = (map.get(key) ?? 0) + 1;
+  map.set(key, next);
+  return next;
+}
+
+/**
+ * Clear the per-URL L402 attempt count for a client instance on successful
+ * response, so a later retry (e.g. from an expired cache entry) gets a fresh
+ * budget.
+ */
+function clearL402AttemptCount(instance: AxiosInstance, key: string): void {
+  const map = l402Attempts.get(instance);
+  if (!map) return;
+  map.delete(key);
+}
 
 /**
  * Error thrown when an x402 endpoint returns 429 Too Many Requests and all retries are exhausted.
@@ -221,6 +301,45 @@ export interface CreateApiClientOptions {
 }
 
 /**
+ * Build a canonical absolute URL for a request so that the L402 attempt
+ * counter and macaroon cache are keyed by the actual endpoint, not the
+ * relative path. Without this, two `createApiClient(differentBaseURL)`
+ * instances both 402-ing on `/foo` would collide on the same cache entry.
+ *
+ * `URL` constructor would be cleaner but throws on inputs that aren't valid
+ * absolute URLs — paths like `/foo` are exactly the case we need to handle,
+ * so a forgiving string concat is the right shape here.
+ */
+function canonicalUrl(config: {
+  baseURL?: string;
+  url?: string;
+}): string {
+  const url = config.url ?? "";
+  const baseURL = config.baseURL ?? "";
+  if (!baseURL || /^https?:\/\//i.test(url)) {
+    return url;
+  }
+  if (baseURL.endsWith("/") && url.startsWith("/")) {
+    return baseURL + url.slice(1);
+  }
+  if (!baseURL.endsWith("/") && !url.startsWith("/")) {
+    return baseURL + "/" + url;
+  }
+  return baseURL + url;
+}
+
+/**
+ * Resolve the canonical request URL from an axios config, returning an empty
+ * string when the config or url is missing. Wrapper around `canonicalUrl`
+ * for the common axios-config shape.
+ */
+function canonicalRequestUrl(config: unknown): string {
+  if (!config || typeof config !== "object") return "";
+  const c = config as { baseURL?: string; url?: string };
+  return canonicalUrl({ baseURL: c.baseURL, url: c.url });
+}
+
+/**
  * Create an API client with x402 payment interceptor.
  * Creates a fresh client instance per call with max-1-payment-attempt guard.
  */
@@ -238,6 +357,193 @@ export async function createApiClient(baseUrl?: string, options?: CreateApiClien
   };
 
   const axiosInstance = createBaseAxiosInstance(url);
+
+  // L402 rail interceptor (registered before the x402 chain so it can inspect
+  // the raw 402 response). Preference rule:
+  //   - If the response advertises a Stacks x402 payment-required header AND a
+  //     Stacks wallet is unlocked, pass through and let the x402 chain handle
+  //     it (x402-stacks is preferred).
+  //   - Otherwise, if the response advertises an L402 challenge AND an LN
+  //     wallet is unlocked, pay the invoice and retry with the L402
+  //     Authorization header.
+  //   - Otherwise, pass through (the x402 chain will reject if it can't pay).
+  axiosInstance.interceptors.response.use(
+    (response) => {
+      // Reset the per-URL L402 attempt counter on any success so the next
+      // unrelated 402 on the same client gets a full retry budget.
+      const method = (response.config?.method ?? "get").toUpperCase();
+      const canonical = canonicalRequestUrl(response.config);
+      if (canonical) {
+        clearL402AttemptCount(axiosInstance, `${method}:${canonical}`);
+      }
+      return response;
+    },
+    async (error) => {
+      if (error.response?.status !== 402) {
+        return Promise.reject(error);
+      }
+
+      // Check for an L402 challenge FIRST. If there isn't one, there is
+      // nothing for this interceptor to do — pass through to the x402
+      // chain without touching the wallet manager. This keeps tests that
+      // mock only the x402-stacks surface area from tripping over
+      // wallet-manager methods they didn't stub.
+      const wwwAuth =
+        error.response?.headers?.["www-authenticate"] ??
+        error.response?.headers?.["WWW-Authenticate"];
+      const challenge = parseL402Challenge(
+        typeof wwwAuth === "string" ? wwwAuth : null
+      );
+      if (!challenge) {
+        // No L402 header — nothing we can do, pass through.
+        return Promise.reject(error);
+      }
+
+      // We have an L402 challenge. Decide whether x402-stacks is a
+      // preferred rail for this response — only now do we need to touch
+      // the wallet manager.
+      const x402HeaderValue = error.response?.headers?.[X402_HEADERS.PAYMENT_REQUIRED];
+      const x402PaymentRequired = decodePaymentRequired(x402HeaderValue);
+      const hasStacksOption = !!x402PaymentRequired?.accepts?.some(
+        (opt) => opt.network?.startsWith("stacks:")
+      );
+      const stacksWalletUnlocked = getWalletManager().isUnlocked();
+
+      if (hasStacksOption && stacksWalletUnlocked) {
+        // Let the x402 interceptor chain handle it.
+        return Promise.reject(error);
+      }
+
+      const lnProvider = getLightningManager().getProvider();
+      if (!lnProvider) {
+        return Promise.reject(
+          new Error(
+            "L402 payment required but Lightning wallet is not unlocked. " +
+              "Run lightning_unlock (or lightning_create) first."
+          )
+        );
+      }
+
+      const method = (error.config?.method ?? "get").toUpperCase();
+      const canonicalUrlKey = canonicalRequestUrl(error.config);
+      const attemptKey = `${method}:${canonicalUrlKey}`;
+
+      // Guard against L402 retry loops — counted per-URL so paying endpoint A
+      // doesn't poison endpoint B.
+      const attempts = getL402AttemptCount(axiosInstance, attemptKey);
+      if (attempts >= 1) {
+        return Promise.reject(
+          new Error(
+            "L402 retry limit exceeded (max 1 attempt). Server returned 402 again after preimage was submitted."
+          )
+        );
+      }
+      incrementL402AttemptCount(axiosInstance, attemptKey);
+
+      // Cache hit: reuse the macaroon+preimage without paying. If the server
+      // rejects the retry with 401 / 402 / 403, the cached entry is stale —
+      // drop it so subsequent calls re-pay instead of looping on a dead
+      // macaroon. Many servers signal stale credentials with non-402 status
+      // codes (401 Unauthorized for missing/expired auth, 403 Forbidden for
+      // caveat violations).
+      const cached = getCachedL402Auth(method, canonicalUrlKey);
+      if (cached) {
+        const originalRequest = error.config;
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers["Authorization"] = buildL402AuthHeader(
+          cached.macaroon,
+          cached.preimage
+        );
+        return axiosInstance.request(originalRequest).catch((retryErr) => {
+          const status = retryErr?.response?.status;
+          if (status === 401 || status === 402 || status === 403) {
+            invalidateL402Auth(method, canonicalUrlKey);
+          }
+          return Promise.reject(retryErr);
+        });
+      }
+
+      // Validate the invoice amount BEFORE paying. A malicious server can
+      // issue a BOLT-11 invoice for an arbitrary amount; Spark's maxFeeSats
+      // only caps routing fees, not the payable amount itself.
+      let decoded: ReturnType<typeof decodeBolt11>;
+      try {
+        decoded = decodeBolt11(challenge.invoice);
+      } catch (decodeErr) {
+        return Promise.reject(
+          new Error(
+            `L402 invoice could not be decoded: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`
+          )
+        );
+      }
+
+      // light-bolt11-decoder returns the amount in millisats as a string on
+      // the "amount" section. Amountless invoices have no amount section (or
+      // a zero/missing value). Convert to sats for the cap comparison.
+      const amountSection = decoded.sections.find(
+        (s): s is { name: "amount"; letters: string; value: string } =>
+          s.name === "amount"
+      );
+      const amountMsat = amountSection?.value
+        ? BigInt(amountSection.value)
+        : 0n;
+      const amountSats = Number(amountMsat / 1000n);
+      if (amountSats === 0) {
+        return Promise.reject(
+          new Error(
+            "L402 invoice has no amount; refusing to pay amountless invoices for safety."
+          )
+        );
+      }
+      if (amountSats > L402_MAX_SATS_PER_INVOICE) {
+        return Promise.reject(
+          new Error(
+            `L402 invoice amount (${amountSats} sats) exceeds the configured cap ` +
+              `of ${L402_MAX_SATS_PER_INVOICE} sats (L402_MAX_SATS_PER_INVOICE). ` +
+              `Refusing to pay.`
+          )
+        );
+      }
+
+      // Pay the Lightning invoice.
+      let payment: { preimage: string; feesPaid: number };
+      try {
+        payment = await lnProvider.payInvoice(challenge.invoice);
+      } catch (payErr) {
+        return Promise.reject(
+          new Error(
+            `L402 payment failed: ${payErr instanceof Error ? payErr.message : String(payErr)}`
+          )
+        );
+      }
+
+      cacheL402Auth(
+        method,
+        canonicalUrlKey,
+        challenge.macaroon,
+        payment.preimage
+      );
+
+      const originalRequest = error.config;
+      originalRequest.headers = originalRequest.headers || {};
+      originalRequest.headers["Authorization"] = buildL402AuthHeader(
+        challenge.macaroon,
+        payment.preimage
+      );
+      // Mirror the cache-hit path: if the freshly-paid retry is itself
+      // rejected with 401 / 402 / 403 (e.g. the server rejected the preimage
+      // due to a macaroon caveat violation, IP binding, expired auth, etc.),
+      // the just-cached entry is dead — drop it so subsequent calls re-pay
+      // instead of looping on a poisoned cache entry.
+      return axiosInstance.request(originalRequest).catch((retryErr) => {
+        const status = retryErr?.response?.status;
+        if (status === 401 || status === 402 || status === 403) {
+          invalidateL402Auth(method, canonicalUrlKey);
+        }
+        return Promise.reject(retryErr);
+      });
+    }
+  );
 
   // Interceptor 1 (FIFO): max-1-payment-attempt guard.
   // On the first 402, increments the counter and re-rejects so Interceptor 2 can handle it.

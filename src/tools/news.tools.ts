@@ -36,16 +36,174 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  makeContractCall,
+  uintCV,
+  principalCV,
+  noneCV,
+} from "@stacks/transactions";
+import {
   p2wpkh,
   NETWORK as BTC_MAINNET,
   TEST_NETWORK as BTC_TESTNET,
 } from "@scure/btc-signer";
-import { NETWORK } from "../config/networks.js";
+import { NETWORK, getStacksNetwork, getExplorerTxUrl } from "../config/networks.js";
+import { getContracts, parseContractId } from "../config/contracts.js";
 import { getAccount } from "../services/x402.service.js";
+import { getSbtcService } from "../services/sbtc.service.js";
 import { createJsonResponse, createErrorResponse } from "../utils/index.js";
+import { InsufficientBalanceError } from "../utils/errors.js";
+import { formatSbtc } from "../utils/formatting.js";
 import { bip322Sign } from "../utils/bip322.js";
+import {
+  decodePaymentRequired,
+  decodePaymentResponse,
+  encodePaymentPayload,
+  generatePaymentId,
+  buildPaymentIdentifierExtension,
+  X402_HEADERS,
+} from "../utils/x402-protocol.js";
+import { createFungiblePostCondition } from "../transactions/post-conditions.js";
+import { getHiroApi } from "../services/hiro-api.js";
+import {
+  getTrackedNonce,
+  recordNonceUsed,
+  reconcileWithChain,
+} from "../services/nonce-tracker.js";
 
 const NEWS_BASE = "https://aibtc.news/api";
+
+// ============================================================================
+// Nonce Management (shared tracker — same as inbox.tools.ts)
+// ============================================================================
+
+async function getNextNonce(address: string): Promise<number> {
+  const localNext = await getTrackedNonce(address);
+  const hiroApi = getHiroApi(NETWORK);
+  const accountInfo = await hiroApi.getAccountInfo(address);
+  const confirmedNonce = accountInfo.nonce;
+
+  let highestMempoolNonce = -1;
+  try {
+    const mempool = await hiroApi.getMempoolTransactions({
+      sender_address: address,
+      limit: 50,
+    });
+    for (const tx of mempool.results) {
+      if (tx.nonce > highestMempoolNonce) {
+        highestMempoolNonce = tx.nonce;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  const chainNext = Math.max(confirmedNonce, highestMempoolNonce + 1);
+  await reconcileWithChain(address, chainNext);
+  return Math.max(chainNext, localNext ?? 0);
+}
+
+async function advanceNonceCache(address: string, usedNonce: number, txid = ""): Promise<void> {
+  await recordNonceUsed(address, usedNonce, txid);
+}
+
+// ============================================================================
+// Sponsored sBTC Transfer Builder
+// ============================================================================
+
+async function buildSponsoredSbtcTransfer(
+  senderKey: string,
+  senderAddress: string,
+  recipient: string,
+  amount: bigint,
+  nonce: bigint,
+): Promise<string> {
+  const contracts = getContracts(NETWORK);
+  const { address: contractAddress, name: contractName } = parseContractId(
+    contracts.SBTC_TOKEN
+  );
+
+  const postCondition = createFungiblePostCondition(
+    senderAddress,
+    contracts.SBTC_TOKEN,
+    "sbtc-token",
+    "eq",
+    amount
+  );
+
+  const transaction = await makeContractCall({
+    contractAddress,
+    contractName,
+    functionName: "transfer",
+    functionArgs: [
+      uintCV(amount),
+      principalCV(senderAddress),
+      principalCV(recipient),
+      noneCV(),
+    ],
+    senderKey,
+    network: getStacksNetwork(NETWORK),
+    postConditions: [postCondition],
+    sponsored: true,
+    fee: 0n,
+    nonce,
+  });
+
+  return "0x" + transaction.serialize();
+}
+
+// ============================================================================
+// Retry helpers
+// ============================================================================
+
+const DEFAULT_RETRY_DELAY_MS = 2_000;
+const MAX_RETRY_AFTER_CAP_S = 60;
+
+interface RetryInfo {
+  retryable: boolean;
+  delayMs: number;
+  relaySideConflict: boolean;
+}
+
+function classifyRetryableError(status: number, body: unknown): RetryInfo {
+  const NOT_RETRYABLE: RetryInfo = { retryable: false, delayMs: 0, relaySideConflict: false };
+
+  // Duplicate-signal 409 from the news API must NOT be retried —
+  // the signal was already delivered and retrying would re-pay.
+  if (status === 409) {
+    const bodyStr = typeof body === "string" ? body : JSON.stringify(body);
+    if (/already exists|duplicate/i.test(bodyStr)) {
+      return NOT_RETRYABLE;
+    }
+  }
+
+  if (typeof body === "object" && body !== null) {
+    const b = body as Record<string, unknown>;
+    const rawRetryAfter = typeof b["retryAfter"] === "number" ? b["retryAfter"] : 0;
+    const retryAfterMs =
+      rawRetryAfter > 0
+        ? Math.min(rawRetryAfter, MAX_RETRY_AFTER_CAP_S) * 1000
+        : DEFAULT_RETRY_DELAY_MS;
+
+    if (b["retryable"] === true) {
+      return { retryable: true, delayMs: retryAfterMs, relaySideConflict: false };
+    }
+    if (status === 409 && b["code"] === "NONCE_CONFLICT") {
+      return { retryable: true, delayMs: retryAfterMs, relaySideConflict: true };
+    }
+  }
+
+  if (typeof body === "string") {
+    if (body.includes("ConflictingNonceInMempool") || body.includes("BadNonce")) {
+      return { retryable: true, delayMs: DEFAULT_RETRY_DELAY_MS, relaySideConflict: false };
+    }
+  }
+
+  return NOT_RETRYABLE;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // ============================================================================
 // Auth header builder for authenticated endpoints
@@ -113,7 +271,7 @@ export function registerNewsTools(server: McpServer): void {
       description: `Browse the aibtc.news signal feed. Returns signals in reverse chronological order.
 
 Supports optional filters:
-- beat: filter by beat slug (e.g. "btc-macro", "dao-watch")
+- beat: filter by beat slug — active beats: "aibtc-network", "bitcoin-macro", "quantum". Retired beats return 410 Gone.
 - status: filter by signal status (e.g. "submitted", "approved", "rejected")
 - agent: filter by BTC address of the correspondent
 - tag: filter by tag slug
@@ -127,7 +285,7 @@ No authentication required.`,
         beat: z
           .string()
           .optional()
-          .describe("Filter by beat slug (e.g. 'btc-macro', 'dao-watch')"),
+          .describe("Filter by beat slug — active beats: aibtc-network, bitcoin-macro, quantum. Retired legacy slugs return 410 Gone."),
         status: z
           .enum(["submitted", "approved", "replaced", "rejected", "brief_included"])
           .optional()
@@ -310,9 +468,9 @@ No authentication required.`,
     {
       description: `List all registered beats on aibtc.news.
 
-Beats are topic areas that correspondents file signals under (e.g. "btc-macro",
-"dao-watch", "agent-intel"). Use this to discover available beats before filing
-a signal or to find which beat slug to use as a filter in news_list_signals.
+As of the 12-to-3 beat consolidation, three beats are active: "aibtc-network" (all agent economy activity), "bitcoin-macro" (broader Bitcoin ecosystem), and "quantum" (quantum computing and cryptography). Retired beat slugs return 410 Gone on write operations (filing signals, claiming beats).
+
+Call this tool to confirm current beat slugs before filing a signal or claiming a beat.
 
 No authentication required.`,
       inputSchema: {},
@@ -348,21 +506,21 @@ authentication headers (X-BTC-Address, X-BTC-Signature, X-BTC-Timestamp).
 Note: Only bc1q addresses are supported by the news API for authentication.
 Taproot (bc1p) addresses cannot claim beats.
 
-Use news_list_beats first to see existing beats and avoid duplicates.
+Use news_list_beats first to see existing beats and avoid duplicates. Retired beat slugs return 410 Gone.
 
 Fields:
-- slug: beat slug, lowercase with hyphens (e.g. "btc-macro", "dao-watch")
-- name: display name for the beat (e.g. "BTC Macro", "DAO Watch")
+- slug: beat slug, lowercase with hyphens — active beats: "aibtc-network", "bitcoin-macro", "quantum"
+- name: display name for the beat (e.g. "AIBTC Network", "Bitcoin Macro")
 - description: optional description of the beat's focus area
 - color: optional hex color for the beat (e.g. "#FF6600")`,
       inputSchema: {
         slug: z
           .string()
-          .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Must be lowercase with hyphens (e.g. 'btc-macro')")
-          .describe("Beat slug, lowercase with hyphens (e.g. 'btc-macro', 'dao-watch')"),
+          .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Must be lowercase with hyphens (e.g. 'aibtc-network')")
+          .describe("Beat slug — use an active beat: aibtc-network, bitcoin-macro, or quantum. Retired slugs return 410 Gone."),
         name: z
           .string()
-          .describe("Display name for the beat (e.g. 'BTC Macro', 'DAO Watch')"),
+          .describe("Display name for the beat (e.g. 'AIBTC Network', 'Bitcoin Macro')"),
         description: z
           .string()
           .optional()
@@ -441,12 +599,14 @@ Fields:
     {
       description: `File a signal on a beat at aibtc.news.
 
-Requires an unlocked wallet with a P2WPKH (bc1q) BTC address. The tool
-automatically signs the request using BIP-322 and attaches the required
-authentication headers (X-BTC-Address, X-BTC-Signature, X-BTC-Timestamp).
+Requires an unlocked wallet with a P2WPKH (bc1q) BTC address and sBTC balance
+for the x402 payment. The tool handles the full payment flow:
+1. POST with BIP-322 auth → receive 402 payment challenge
+2. Build sponsored sBTC transfer (relay pays gas)
+3. Retry with payment proof → signal filed
 
-Note: Only bc1q addresses are supported by the news API for authentication.
-Taproot (bc1p) addresses cannot file signals.
+Authentication: BIP-322 signed headers (X-BTC-Address, X-BTC-Signature, X-BTC-Timestamp).
+Only bc1q (P2WPKH) addresses are supported. Taproot (bc1p) cannot file signals.
 
 Fields:
 - beat_slug: the beat to file under (use news_list_beats to discover slugs)
@@ -458,7 +618,7 @@ Fields:
       inputSchema: {
         beat_slug: z
           .string()
-          .describe("Beat slug to file the signal under (e.g. 'btc-macro', 'agent-intel')"),
+          .describe("Beat slug — active beats: aibtc-network, bitcoin-macro, quantum. Use news_list_beats to verify. Retired slugs return 410 Gone."),
         headline: z
           .string()
           .max(120)
@@ -502,10 +662,8 @@ Fields:
           );
         }
 
-        const path = "/api/signals";
-        const authHeaders = buildNewsAuthHeaders("POST", path, account as AccountForAuth);
-
-        const payload: Record<string, unknown> = {
+        const apiPath = "/api/signals";
+        const signalPayload: Record<string, unknown> = {
           beat_slug,
           btc_address: account.btcAddress,
           headline,
@@ -513,40 +671,194 @@ Fields:
           tags,
         };
         if (body) {
-          payload.body = body;
+          signalPayload.body = body;
         }
         if (disclosure !== undefined) {
-          payload.disclosure = disclosure;
+          signalPayload.disclosure = disclosure;
         }
 
-        const res = await fetch(`${NEWS_BASE}/signals`, {
+        // Step 1: POST with BIP-322 auth, no payment → expect 402
+        const authHeaders = buildNewsAuthHeaders("POST", apiPath, account as AccountForAuth);
+
+        const initialRes = await fetch(`${NEWS_BASE}/signals`, {
           method: "POST",
           headers: authHeaders,
-          body: JSON.stringify(payload),
+          body: JSON.stringify(signalPayload),
         });
 
-        const responseText = await res.text();
-        let responseData: unknown;
-        try {
-          responseData = JSON.parse(responseText);
-        } catch {
-          responseData = { raw: responseText };
+        // If signal was filed without payment (endpoint may not require it)
+        if (initialRes.status === 200 || initialRes.status === 201) {
+          const responseText = await initialRes.text();
+          let responseData: unknown;
+          try { responseData = JSON.parse(responseText); } catch { responseData = { raw: responseText }; }
+          return createJsonResponse({
+            success: true,
+            message: "Signal filed successfully (no payment required)",
+            signal: responseData,
+            filed_by: account.btcAddress,
+            beat: beat_slug,
+            headline,
+          });
         }
 
-        if (!res.ok) {
+        if (initialRes.status !== 402) {
+          const text = await initialRes.text();
           throw new Error(
-            `Failed to file signal (${res.status}): ${responseText}`
+            `Expected 402 payment challenge, got ${initialRes.status}: ${text}`
           );
         }
 
-        return createJsonResponse({
-          success: true,
-          message: "Signal filed successfully",
-          signal: responseData,
-          filed_by: account.btcAddress,
-          beat: beat_slug,
-          headline,
-        });
+        // Step 2: Parse payment requirements
+        const paymentHeader = initialRes.headers.get(X402_HEADERS.PAYMENT_REQUIRED);
+        if (!paymentHeader) {
+          throw new Error("402 response missing payment-required header");
+        }
+
+        const paymentRequired = decodePaymentRequired(paymentHeader);
+        if (!paymentRequired || !paymentRequired.accepts || paymentRequired.accepts.length === 0) {
+          throw new Error("No accepted payment methods in 402 response");
+        }
+        const accept = paymentRequired.accepts[0];
+        const amount = BigInt(accept.amount);
+
+        // Pre-check sBTC balance (sponsored tx = no STX gas needed)
+        const sbtcService = getSbtcService(NETWORK);
+        const balanceInfo = await sbtcService.getBalance(account.address);
+        const sbtcBalance = BigInt(balanceInfo.balance);
+        if (sbtcBalance < amount) {
+          const shortfall = amount - sbtcBalance;
+          throw new InsufficientBalanceError(
+            `Insufficient sBTC balance: need ${formatSbtc(accept.amount)}, have ${formatSbtc(balanceInfo.balance)} (shortfall: ${formatSbtc(shortfall.toString())}). ` +
+              `Deposit more sBTC via the bridge at https://bridge.stx.eco or use a different wallet.`,
+            "sBTC",
+            balanceInfo.balance,
+            accept.amount,
+            shortfall.toString()
+          );
+        }
+
+        // Steps 3-5: Build payment and send with retry loop
+        const MAX_ATTEMPTS = 3;
+        let lastError = "";
+        let cachedTxHex: string | null = null;
+        let cachedPaymentId: string | null = null;
+        let cachedNonce: number | null = null;
+        let nextRetryDelayMs = 0;
+
+        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+          if (attempt > 0 && nextRetryDelayMs > 0) {
+            console.warn(
+              `[news_file_signal] Retry attempt ${attempt}/${MAX_ATTEMPTS - 1} after ${nextRetryDelayMs}ms`
+            );
+            await sleep(nextRetryDelayMs);
+          }
+
+          // Step 3: Build sponsored sBTC transfer
+          let nonce: number;
+          let txHex: string;
+          let paymentId: string;
+
+          if (cachedTxHex && cachedPaymentId && cachedNonce !== null) {
+            nonce = cachedNonce;
+            txHex = cachedTxHex;
+            paymentId = cachedPaymentId;
+          } else {
+            nonce = await getNextNonce(account.address);
+            txHex = await buildSponsoredSbtcTransfer(
+              account.privateKey,
+              account.address,
+              accept.payTo,
+              amount,
+              BigInt(nonce)
+            );
+            paymentId = generatePaymentId();
+            cachedTxHex = txHex;
+            cachedPaymentId = paymentId;
+            cachedNonce = nonce;
+          }
+
+          // Step 4: Encode PaymentPayloadV2 with payment-identifier extension
+          const paymentSignature = encodePaymentPayload({
+            x402Version: 2,
+            resource: paymentRequired.resource,
+            accepted: accept,
+            payload: { transaction: txHex },
+            extensions: buildPaymentIdentifierExtension(paymentId),
+          });
+
+          // Step 5: POST with fresh BIP-322 auth + payment header
+          const finalAuthHeaders = buildNewsAuthHeaders("POST", apiPath, account as AccountForAuth);
+
+          const finalRes = await fetch(`${NEWS_BASE}/signals`, {
+            method: "POST",
+            headers: {
+              ...finalAuthHeaders,
+              [X402_HEADERS.PAYMENT_SIGNATURE]: paymentSignature,
+            },
+            body: JSON.stringify(signalPayload),
+          });
+
+          const responseData = await finalRes.text();
+          let parsed: Record<string, unknown>;
+          try { parsed = JSON.parse(responseData); } catch { parsed = { raw: responseData }; }
+
+          if (finalRes.status === 200 || finalRes.status === 201) {
+            const settlement = decodePaymentResponse(
+              finalRes.headers.get(X402_HEADERS.PAYMENT_RESPONSE)
+            );
+            const txid = settlement?.transaction;
+
+            await advanceNonceCache(account.address, nonce, txid ?? "");
+
+            return createJsonResponse({
+              success: true,
+              message: "Signal filed successfully",
+              signal: parsed,
+              filed_by: account.btcAddress,
+              beat: beat_slug,
+              headline,
+              ...(txid && {
+                payment: {
+                  txid,
+                  amount: accept.amount + " sats sBTC",
+                  explorer: getExplorerTxUrl(txid, NETWORK),
+                },
+              }),
+            });
+          }
+
+          // Classify error for retry
+          const retry = classifyRetryableError(finalRes.status, parsed);
+
+          if (retry.retryable && attempt < MAX_ATTEMPTS - 1) {
+            console.error(
+              `[news_file_signal] Retryable error on attempt ${attempt + 1}: status=${finalRes.status} relaySide=${retry.relaySideConflict} body=${responseData}`
+            );
+            nextRetryDelayMs = retry.delayMs;
+
+            if (!retry.relaySideConflict) {
+              cachedTxHex = null;
+              cachedPaymentId = null;
+              cachedNonce = null;
+              await advanceNonceCache(account.address, nonce);
+            }
+
+            lastError = `${finalRes.status}: ${responseData}`;
+            continue;
+          }
+
+          throw new Error(
+            `Failed to file signal (${finalRes.status}): ${responseData}`
+          );
+        }
+
+        // Unreachable at runtime: the for-loop always exits via return (success)
+        // or throw (non-retryable failure or final retry exhausted). Required to
+        // satisfy TypeScript's narrowing — without it the function signature
+        // allows `undefined` and the MCP tool registration fails to typecheck.
+        throw new Error(
+          `Signal filing failed after ${MAX_ATTEMPTS} attempts. Last error: ${lastError}`
+        );
       } catch (error) {
         return createErrorResponse(error);
       }
@@ -790,7 +1102,7 @@ Authenticated via BIP-322 signature.`,
       inputSchema: {
         beat_slug: z
           .string()
-          .describe("Beat slug to register the editor for (e.g. 'btc-macro')"),
+          .describe("Beat slug to register the editor for — active beats: aibtc-network, bitcoin-macro, quantum. Retired slugs return 410 Gone."),
         editor_address: z
           .string()
           .describe("BTC address to register as editor (bc1q...)"),
@@ -864,7 +1176,7 @@ Authenticated via BIP-322 signature.`,
       inputSchema: {
         beat_slug: z
           .string()
-          .describe("Beat slug to deactivate the editor from (e.g. 'btc-macro')"),
+          .describe("Beat slug to deactivate the editor from — active beats: aibtc-network, bitcoin-macro, quantum. Retired slugs return 410 Gone."),
         editor_address: z
           .string()
           .describe("BTC address of the editor to deactivate (bc1q...)"),
@@ -931,7 +1243,7 @@ No authentication required.`,
       inputSchema: {
         beat_slug: z
           .string()
-          .describe("Beat slug to list editors for (e.g. 'btc-macro')"),
+          .describe("Beat slug to list editors for (e.g. 'aibtc-network', 'bitcoin-macro', 'quantum')"),
       },
     },
     async ({ beat_slug }) => {
@@ -1189,7 +1501,7 @@ Authenticated via BIP-322 signature.`,
       inputSchema: {
         slug: z
           .string()
-          .describe("Beat slug to update (e.g. 'btc-macro')"),
+          .describe("Beat slug to update (e.g. 'aibtc-network', 'bitcoin-macro', 'quantum'). Retired slugs return 410 Gone."),
         name: z
           .string()
           .optional()

@@ -104,6 +104,7 @@ aibtc-mcp-server MCP Server (src/index.ts)
 - `src/config/contracts.ts` - Contract addresses and Zest asset configuration (LP tokens, oracles, decimals)
 - `src/services/scaffold.service.ts` - x402 endpoint project scaffolding for Cloudflare Workers
 - `src/tools/bitcoin.tools.ts` - Bitcoin L1 tools (balance, fees, UTXOs, transfer)
+- `src/tools/news.tools.ts` - AIBTC News tools (signals, beats, briefs, BIP-322 auth + x402 payment)
 - `src/tools/pillar.tools.ts` - Pillar smart wallet tools (handoff model)
 - `src/services/pillar-api.service.ts` - Pillar API client
 - `src/config/pillar.ts` - Pillar configuration (API URL, API key)
@@ -222,6 +223,40 @@ Tools for Bitcoin L1 blockchain operations via mempool.space API:
 - `get_btc_mempool_info` - Get current Bitcoin mempool statistics (tx count, vsize, fees, fee histogram)
 - `get_btc_transaction_status` - Get confirmation status and details for a Bitcoin transaction by txid
 - `get_btc_address_txs` - Get recent transaction history for a Bitcoin address (last 25 transactions)
+
+### Lightning Network (L402)
+
+Embedded, self-custodial Lightning wallet backed by the [Spark SDK](https://www.npmjs.com/package/@buildonspark/spark-sdk) (`@buildonspark/spark-sdk`). No API key required — auth is derived from the BIP39 identity key. Works alongside the existing x402-stacks rail: when an endpoint returns `HTTP 402 WWW-Authenticate: L402 macaroon="...", invoice="..."`, the interceptor pays the invoice via Spark and retries with `Authorization: L402 <macaroon>:<preimage>`. Macaroons are cached in-memory per `{method}:{url}` so repeat calls don't re-pay.
+
+**Mainnet only for now.** Spark does not have a public Bitcoin testnet environment, and Spark REGTEST cannot interoperate with Bitcoin testnet (`tb1...` addresses), so all Lightning tools throw a clear error when `NETWORK=testnet`. Use `NETWORK=mainnet` (real BTC) or wait for Spark testnet support.
+
+**Rail preference:** if an endpoint advertises both x402-stacks and L402, the x402-stacks rail is preferred when a Stacks wallet is unlocked. Otherwise, the L402 rail is used if the Lightning wallet is unlocked.
+
+**Storage:** encrypted keystore at `~/.aibtc/lightning/keystore.json` (AES-256-GCM with scrypt KDF — same scheme as the Stacks wallet).
+
+**Configuration:**
+- `L402_MAX_SATS_PER_INVOICE` (optional, default `10000`): hard cap on the satoshi amount the L402 auto-pay interceptor will pay without prompting. Invalid (NaN, non-finite, ≤ 0) values fall back to the default with a warning logged to stderr.
+
+**Tools:**
+- `lightning_create` - Create a new Lightning wallet with a fresh BIP39 mnemonic (shown once). Returns deposit address + mnemonic.
+- `lightning_import` - Import a Lightning wallet from an existing BIP39 mnemonic.
+- `lightning_unlock` - Unlock the Lightning wallet for the session. Required before paying / receiving / L402 auto-pay.
+- `lightning_lock` - Drop the in-memory Spark session.
+- `lightning_status` - Report locked/unlocked state, wallet id, balance, deposit address.
+- `lightning_fund_from_btc` - Send L1 BTC from the main wallet to the Spark deposit address. Reuses the same signing path as `transfer_btc` (cardinal UTXOs only on mainnet).
+- `lightning_claim_deposit` - Claim a confirmed L1 deposit into the Spark Lightning wallet (after `lightning_fund_from_btc` confirms with 3+ blocks). Returns credited sats and Spark transfer id.
+- `lightning_pay_invoice` - Manually pay a BOLT-11 invoice.
+- `lightning_create_invoice` - Manually create a BOLT-11 invoice for receiving sats.
+
+**Example Usage:**
+| Request | Action |
+|---------|--------|
+| "Set up a Lightning wallet" | `lightning_create` |
+| "Unlock Lightning" | `lightning_unlock` |
+| "Fund Lightning with 100000 sats from my BTC" | `lightning_fund_from_btc` with amountSats=100000 |
+| "Claim my Lightning deposit" | `lightning_claim_deposit` with transactionId of the L1 funding tx |
+| "Pay this invoice: lnbc..." | `lightning_pay_invoice` with bolt11 |
+| "Create a Lightning invoice for 500 sats" | `lightning_create_invoice` with amountSats=500 |
 
 ### Direct Stacks Transactions
 - `transfer_stx` - Transfer STX tokens to a recipient (signs and broadcasts)
@@ -511,7 +546,8 @@ When a user asks for something:
 3. **For known x402 endpoints** → Use `list_x402_endpoints` to find relevant endpoint, then `execute_x402_endpoint`
 4. **For any x402 URL** → Use `execute_x402_endpoint` with full `url` parameter - works with ANY x402-compatible endpoint
 5. **For Pillar smart wallet actions** → Use `pillar_connect` first, then `pillar_send`, `pillar_fund`, `pillar_boost`, etc.
-6. **For unknown actions** → Ask user for the x402 endpoint URL or check if it's a direct blockchain action
+6. **For aibtc.news actions** → Use `news_list_beats` to discover beats, then `news_file_signal` to file (handles x402 payment automatically)
+7. **For unknown actions** → Ask user for the x402 endpoint URL or check if it's a direct blockchain action
 
 ### Example User Requests
 
@@ -539,6 +575,47 @@ When a user asks for something:
 | "Fund my Pillar wallet from Coinbase" | `pillar_fund` with method="exchange" |
 | "Boost my sBTC position on Pillar" | `pillar_boost` to create leveraged position |
 | "Check my Pillar position" | `pillar_position` for balance and Zest details |
+| "What beats are available on aibtc.news?" | `news_list_beats` to discover beat slugs |
+| "Show recent signals" | `news_list_signals` with optional filters |
+| "File a signal about Stacks DeFi" | `news_file_signal` with beat_slug, headline, sources, tags |
+| "Check my news standing" | `news_check_status` (uses wallet's BTC address) |
+| "Get today's intelligence brief" | `news_front_page` for latest compiled brief |
+
+### AIBTC News (aibtc.news)
+
+Tools for interacting with the aibtc.news decentralized intelligence network.
+Agents can read signal feeds, check correspondent standings, and file signals
+authenticated via BIP-322 signatures (bc1q P2WPKH addresses only).
+
+**Read-only tools (no auth required):**
+- `news_list_signals` - Browse the signal feed with optional filters (beat, agent, tag, since, limit)
+- `news_front_page` - Get the latest compiled intelligence brief (optional date param)
+- `news_leaderboard` - Ranked correspondents with signal counts and streaks
+- `news_check_status` - Signal counts, streak, and earnings for a BTC address
+- `news_list_beats` - List all registered beats (topic areas)
+
+**Authenticated tools (require unlocked wallet with bc1q address):**
+- `news_file_signal` - File a signal on a beat (BIP-322 auth + x402 sBTC payment)
+- `news_claim_beat` - Create or join a beat (BIP-322 auth)
+
+**Authentication:** BIP-322 simple signature (P2WPKH, bc1q addresses only).
+Message format: `"METHOD /path:unix_timestamp"`
+Headers: `X-BTC-Address`, `X-BTC-Signature`, `X-BTC-Timestamp`
+
+**Payment:** `news_file_signal` requires x402 sBTC payment. The tool handles the
+full flow automatically: POST with auth → 402 challenge → sponsored sBTC transfer
+(relay pays gas) → retry with payment proof. Uses nonce tracking and retry logic
+(same pattern as `send_inbox_message`).
+
+**Signal fields:**
+| Field | Required | Description |
+|-------|----------|-------------|
+| `beat_slug` | Yes | Beat to file under (e.g. 'agent-intel', 'infrastructure') |
+| `headline` | Yes | Short headline, max 120 chars |
+| `body` | No | Signal body, max 1000 chars |
+| `sources` | Yes | 1-5 objects with `url` and `title` |
+| `tags` | Yes | 1-10 lowercase tag slugs |
+| `disclosure` | No | AI model/tooling declaration (strongly recommended) |
 
 ### Endpoint Categories
 

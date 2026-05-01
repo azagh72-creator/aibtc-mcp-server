@@ -1,5 +1,71 @@
 # Changelog
 
+## [1.50.1](https://github.com/aibtcdev/aibtc-mcp-server/compare/mcp-server-v1.50.0...mcp-server-v1.50.1) (2026-04-30)
+
+
+### Bug Fixes
+
+* point Zest data helper to protocol-data for v0-4-market positions ([#446](https://github.com/aibtcdev/aibtc-mcp-server/issues/446)) ([f3447fe](https://github.com/aibtcdev/aibtc-mcp-server/commit/f3447fe1f494ae36cb9955ade03ad83dc013d167))
+* **relay:** health check reads pool state fields from /health ([#431](https://github.com/aibtcdev/aibtc-mcp-server/issues/431)) ([7731cb0](https://github.com/aibtcdev/aibtc-mcp-server/commit/7731cb0cac3fae1cd8f33420201555c35fbd99c9))
+
+
+### Performance Improvements
+
+* **unisat-indexer:** add classifyUtxosFromList to avoid double UTXO fetch on Styx deposits ([#486](https://github.com/aibtcdev/aibtc-mcp-server/issues/486)) ([bc68562](https://github.com/aibtcdev/aibtc-mcp-server/commit/bc68562cad6b382a2721cb26feec7da21c75c30b))
+
+## [1.50.0](https://github.com/aibtcdev/aibtc-mcp-server/compare/mcp-server-v1.49.1...mcp-server-v1.50.0) (2026-04-30)
+
+
+### Features
+
+* **news:** add x402 payment flow to news_file_signal ([#426](https://github.com/aibtcdev/aibtc-mcp-server/issues/426)) ([8acaf69](https://github.com/aibtcdev/aibtc-mcp-server/commit/8acaf698070d1a100ec6b7eaf767e57172bd99d2))
+
+
+### Bug Fixes
+
+* **deps:** upgrade lodash to 4.18.1 to address CVE-2026-4800 ([#488](https://github.com/aibtcdev/aibtc-mcp-server/issues/488)) ([d551bfd](https://github.com/aibtcdev/aibtc-mcp-server/commit/d551bfd0e90c56b712642b9f49b987849e9d1ab4))
+* **deps:** upgrade path-to-regexp to ^8.4.0 (CVE-2026-4926) ([#490](https://github.com/aibtcdev/aibtc-mcp-server/issues/490)) ([1b927b7](https://github.com/aibtcdev/aibtc-mcp-server/commit/1b927b742963aa1917555197b061ac9da66bcf9e))
+
+## [1.49.1](https://github.com/aibtcdev/aibtc-mcp-server/compare/mcp-server-v1.49.0...mcp-server-v1.49.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* **bitcoin:** replace deprecated Hiro Ordinals API with Unisat indexer ([#482](https://github.com/aibtcdev/aibtc-mcp-server/issues/482)) ([399be55](https://github.com/aibtcdev/aibtc-mcp-server/commit/399be553a409d1b2b646cdb188037529d0a899de))
+
+## [1.49.0](https://github.com/aibtcdev/aibtc-mcp-server/compare/mcp-server-v1.48.0...mcp-server-v1.49.0) (2026-04-27)
+
+
+### Features
+
+* **lightning:** add L402 payment rail via Spark SDK ([#474](https://github.com/aibtcdev/aibtc-mcp-server/issues/474)) ([336c8b5](https://github.com/aibtcdev/aibtc-mcp-server/commit/336c8b5568eab78c7813c9964fff7840deef9cb9))
+
+## [1.48.0](https://github.com/aibtcdev/aibtc-mcp-server/compare/mcp-server-v1.47.2...mcp-server-v1.48.0) (2026-04-16)
+
+
+### Features
+
+* **nostr:** add banner field to nostr_set_profile ([#468](https://github.com/aibtcdev/aibtc-mcp-server/issues/468)) ([010a649](https://github.com/aibtcdev/aibtc-mcp-server/commit/010a6495546aec7e36a8a511dc42c5beb9655894))
+
+
+### Bug Fixes
+
+* **deps:** upgrade axios to 1.15.0 (CVE-2025-62718) ([#459](https://github.com/aibtcdev/aibtc-mcp-server/issues/459)) ([0c528b5](https://github.com/aibtcdev/aibtc-mcp-server/commit/0c528b5cfc15cc0550c90af15f6a49ffca8d3015))
+
+## [1.47.2](https://github.com/aibtcdev/aibtc-mcp-server/compare/mcp-server-v1.47.1...mcp-server-v1.47.2) (2026-04-13)
+
+
+### Bug Fixes
+
+* **news-tools:** update beat slug examples for 12-to-3 consolidation (closes [#457](https://github.com/aibtcdev/aibtc-mcp-server/issues/457)) ([#463](https://github.com/aibtcdev/aibtc-mcp-server/issues/463)) ([eb28f6c](https://github.com/aibtcdev/aibtc-mcp-server/commit/eb28f6c24d65791157ffe1bce49e78fc5bac88bb))
+
+## [1.47.1](https://github.com/aibtcdev/aibtc-mcp-server/compare/mcp-server-v1.47.0...mcp-server-v1.47.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **inbox:** handle 202 staged delivery as success ([#454](https://github.com/aibtcdev/aibtc-mcp-server/issues/454)) ([2f0dc97](https://github.com/aibtcdev/aibtc-mcp-server/commit/2f0dc974137b13b03a7a4fecc43299ee1e9b3df2))
+
 ## [1.47.0](https://github.com/aibtcdev/aibtc-mcp-server/compare/mcp-server-v1.46.3...mcp-server-v1.47.0) (2026-04-07)
 
 
