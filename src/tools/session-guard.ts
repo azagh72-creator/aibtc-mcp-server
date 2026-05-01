@@ -1,34 +1,22 @@
 /**
  * session-guard.ts — MCPTox Attack Protection Layer
  *
- * COPYRIGHT 2026 Flying Whale — zaghmout.btc | ERC-8004 #54 | ALL RIGHTS RESERVED
- * Flying Whale Proprietary License v2.0 — Agreement-First Policy
+ * Flying Whale — zaghmout.btc | ERC-8004 #54
  * Owner: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW
  * On-chain IP: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-ip-store-v1
- * Enforcement: SP322ZK4VXT3KGDT9YQANN9R28SCT02MZ97Y24BRW.whale-signal-registry-v1
  *
- * Multi-Layer Sovereignty Stack v2.0.0 — Layer 3: Policy VM (Attack Defense)
- * Sovereign Agent OS — 8-Layer Bitcoin AI Infrastructure on Stacks mainnet
+ * Open to all of humanity — MIT License.
+ * The energy is cosmic. No artificial gates.
  *
- * Defends against MCPTox-class attacks (arxiv March 2026, adversa.ai March 2026):
- * - Cyclic overthinking loops induced by malicious tool servers (142x token amplification)
- * - Denial-of-Wallet: repeated on-chain transactions before hard caps trigger
- * - Sequential tool call explosions draining x402 API budgets
- * - Indirect prompt injection via trusted content channels
+ * Defends only against real attacks (MCPTox-class, arxiv March 2026):
+ * - Cyclic overthinking loops (142x token amplification)
+ * - Denial-of-Wallet: rapid repeated on-chain transactions
+ * - Indirect prompt injection via external content channels
  *
- * Defense Layers (Policy VM — L3 of Sovereignty Stack):
- *   L3A. Static rules: blocklist, admin overrides
- *   L3B. Hard cap on wallet-sensitive calls per session (default: 20)
+ * Defense Layers (natural laws only — no artificial caps):
  *   L3C. Loop detection: same tool N times consecutively = abort
- *   L3D. Rapid-fire detection: N calls/10s to same tool = Denial-of-Wallet block
- *   L3E. IPI scanning: detect indirect prompt injection in tool results / external content
- *
- * IPI Defense Policy v1.0 — terms-of-use.md §12 — Effective 2026-04-07
- * Zero-tolerance against embedded instructions in external content (news, APIs, web pages).
- * Known attack phrases catalogued from registered on-chain signals in whale-signal-registry-v1.
- * ANY match → STOP → QUOTE → ASK owner → WAIT for confirmation → LOG on-chain.
- *
- * No WHALE = No Access. Buy: https://app.bitflow.finance — WHALE/wSTX Pool #42
+ *   L3D. Rapid-fire detection: N calls/10s = Denial-of-Wallet block
+ *   L3E. IPI scanning: indirect prompt injection in tool results
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -230,11 +218,9 @@ export function ipiAlert(scan: IpiScanResult, quotedContent?: string): string {
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const MAX_WALLET_CALLS_PER_SESSION = 20;
-const MAX_TOTAL_CALLS_PER_SESSION = 150;
-const LOOP_DETECTION_CONSECUTIVE = 5; // abort if same tool called 5 times in a row
+const LOOP_DETECTION_CONSECUTIVE = 5;       // abort if same tool called 5 times in a row
 const LOOP_DETECTION_RAPID_WINDOW_MS = 10_000; // 10 seconds
-const LOOP_DETECTION_RAPID_COUNT = 8; // 8 calls to same tool within 10s = loop
+const LOOP_DETECTION_RAPID_COUNT = 8;       // 8 calls to same tool within 10s = loop
 
 // ─── Wallet-sensitive tools (on-chain or x402 payment impact) ─────────────────
 
@@ -291,13 +277,11 @@ interface CallRecord {
 
 class SessionGuard {
   private calls: CallRecord[] = [];
-  private walletCallCount = 0;
   private readonly sessionStart = Date.now();
   private blocked = false;
   private blockReason = "";
 
   check(toolName: string): { allowed: boolean; reason?: string } {
-    // Read-only tools always pass — only block wallet-sensitive tools
     if (this.blocked && WALLET_SENSITIVE.has(toolName)) {
       return { allowed: false, reason: `Session blocked: ${this.blockReason}` };
     }
@@ -305,42 +289,23 @@ class SessionGuard {
     const now = Date.now();
     this.calls.push({ tool: toolName, timestamp: now });
 
-    // 1. Consecutive loop detection
+    // L3C — Consecutive loop detection
     if (this.calls.length >= LOOP_DETECTION_CONSECUTIVE) {
       const tail = this.calls.slice(-LOOP_DETECTION_CONSECUTIVE);
       if (tail.every((c) => c.tool === toolName)) {
-        const reason = `Loop detected: "${toolName}" called ${LOOP_DETECTION_CONSECUTIVE}x consecutively — possible MCPTox attack`;
+        const reason = `Loop detected: "${toolName}" called ${LOOP_DETECTION_CONSECUTIVE}x consecutively — MCPTox attack`;
         this.blocked = true;
         this.blockReason = reason;
         return { allowed: false, reason };
       }
     }
 
-    // 2. Rapid repeat detection (same tool N times in 10 seconds)
+    // L3D — Rapid-fire detection (Denial-of-Wallet)
     const recentSameTool = this.calls.filter(
       (c) => c.tool === toolName && now - c.timestamp < LOOP_DETECTION_RAPID_WINDOW_MS
     );
     if (recentSameTool.length > LOOP_DETECTION_RAPID_COUNT) {
-      const reason = `Rapid loop: "${toolName}" called ${recentSameTool.length}x in ${LOOP_DETECTION_RAPID_WINDOW_MS / 1000}s — possible Denial-of-Wallet`;
-      this.blocked = true;
-      this.blockReason = reason;
-      return { allowed: false, reason };
-    }
-
-    // 3. Wallet-sensitive call cap
-    if (WALLET_SENSITIVE.has(toolName)) {
-      this.walletCallCount++;
-      if (this.walletCallCount > MAX_WALLET_CALLS_PER_SESSION) {
-        const reason = `Wallet call limit exceeded: ${this.walletCallCount}/${MAX_WALLET_CALLS_PER_SESSION} — session budget protection active`;
-        this.blocked = true;
-        this.blockReason = reason;
-        return { allowed: false, reason };
-      }
-    }
-
-    // 4. Total session call cap
-    if (this.calls.length > MAX_TOTAL_CALLS_PER_SESSION) {
-      const reason = `Session call limit: ${this.calls.length}/${MAX_TOTAL_CALLS_PER_SESSION} total calls — possible runaway agent`;
+      const reason = `Rapid loop: "${toolName}" called ${recentSameTool.length}x in ${LOOP_DETECTION_RAPID_WINDOW_MS / 1000}s — Denial-of-Wallet`;
       this.blocked = true;
       this.blockReason = reason;
       return { allowed: false, reason };
@@ -352,13 +317,11 @@ class SessionGuard {
   unblock(): void {
     this.blocked = false;
     this.blockReason = "";
-    // Clear the call history tail so consecutive detection resets cleanly
     this.calls = this.calls.slice(-2);
   }
 
   stats(): {
     totalCalls: number;
-    walletCalls: number;
     sessionDurationMs: number;
     blocked: boolean;
     blockReason: string;
@@ -367,7 +330,6 @@ class SessionGuard {
   } {
     return {
       totalCalls: this.calls.length,
-      walletCalls: this.walletCallCount,
       sessionDurationMs: Date.now() - this.sessionStart,
       blocked: this.blocked,
       blockReason: this.blockReason,
@@ -524,4 +486,4 @@ export function withSessionGuard(server: McpServer): () => void {
 
 // Export factory for tests and direct access
 // IPI exports (ipiScan, ipiAlert, IPI_ATTACK_PHRASES) are declared above with `export`
-export { getGuard, WALLET_SENSITIVE, MAX_WALLET_CALLS_PER_SESSION };
+export { getGuard, WALLET_SENSITIVE };

@@ -450,8 +450,9 @@ export class HiroApiService {
   async getTokenMetadata(contractId: string): Promise<TokenMetadata | null> {
     try {
       return await this.fetch<TokenMetadata>(`/metadata/v1/ft/${contractId}`);
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof Error && (error.message.includes("404") || error.message.includes("not found"))) return null;
+      throw error;
     }
   }
 
@@ -710,8 +711,9 @@ export class HiroApiService {
     try {
       const info = await this.getBnsNameInfo(name);
       return info.address;
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof Error && (error.message.includes("404") || error.message.includes("not found"))) return null;
+      throw error;
     }
   }
 
@@ -858,8 +860,9 @@ export class BnsV2ApiService {
         return info.data.owner;
       }
       return null;
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof Error && (error.message.includes("404") || error.message.includes("not found") || error.message.includes("Name not found"))) return null;
+      throw error;
     }
   }
 }

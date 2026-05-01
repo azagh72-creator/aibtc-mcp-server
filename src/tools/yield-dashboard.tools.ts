@@ -327,7 +327,7 @@ async function getWalletBalances(
     const res = await fetch(
       `${MAINNET_HIRO_API}/extended/v1/address/${walletAddress}/balances`
     );
-    if (!res.ok) return { stxMicroStx: 0, sbtcSats: 0 };
+    if (!res.ok) throw new Error(`Balances API returned ${res.status} for ${walletAddress}`);
     const data = (await res.json()) as {
       stx?: { balance?: string };
       fungible_tokens?: Record<string, { balance?: string }>;
@@ -340,8 +340,8 @@ async function getWalletBalances(
       ? parseInt(data.fungible_tokens?.[sbtcKey]?.balance ?? "0", 10)
       : 0;
     return { stxMicroStx, sbtcSats };
-  } catch {
-    return { stxMicroStx: 0, sbtcSats: 0 };
+  } catch (error) {
+    throw new Error(`Failed to fetch wallet balances for ${walletAddress}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

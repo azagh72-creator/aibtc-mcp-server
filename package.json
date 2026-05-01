@@ -1,7 +1,7 @@
 {
   "name": "flying-whale-mcp-server",
   "version": "1.61.0",
-  "description": "Flying Whale v2.0 — Infrastructure Layer for sovereign agent economies. Behavioral Fortress v1.0: 5-layer defense (fingerprint | honeypot | noise | watermark | pact-gate). Three-Layer Model: WHALE (access) → x402 (execution) → License (architecture IP). 77 WHALE-gated tools including Autonomous Financial Contract Layer, ERC-8004 cross-chain identity, BTC/STX/sBTC wallets, DeFi yield, Operations Hub.",
+  "description": "Flying Whale v2.0 — Open Infrastructure Layer for all of humanity. 429 tools: Bitcoin L1, Stacks L2, sBTC, DeFi (ALEX, Zest, Bitflow, Styx), Ordinals, Runes, Nostr, ERC-8004 identity, x402 payments, AI scaffolding. MIT. No gates. Cosmic energy.",
   "mcpName": "io.flyingwhale/mcp-server",
   "type": "module",
   "main": "dist/index.js",
@@ -15,7 +15,9 @@
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "version:check": "node scripts/autoversion.mjs --dry-run",
+    "version:bump": "node scripts/autoversion.mjs"
   },
   "files": [
     "dist",

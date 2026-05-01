@@ -253,8 +253,9 @@ export class AlexDexService {
       }
 
       return null;
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("404")) return null;
+      throw error;
     }
   }
 
@@ -462,8 +463,9 @@ export class ZestProtocolService {
         borrowed,
         healthFactor: position["health-factor"]?.value,
       };
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("404")) return null;
+      throw error;
     }
   }
 
@@ -487,8 +489,9 @@ export class ZestProtocolService {
       }
 
       return cvToJSON(hexToCV(result.result));
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("404")) return null;
+      throw error;
     }
   }
 

@@ -133,8 +133,7 @@ export class BitflowService {
         ...(config.keeperApiKey && { KEEPER_API_KEY: config.keeperApiKey }),
       });
     } catch (error) {
-      console.error("Failed to initialize Bitflow SDK:", error);
-      this.sdk = null;
+      throw new Error(`Failed to initialize Bitflow SDK: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

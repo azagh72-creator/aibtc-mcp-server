@@ -30,22 +30,31 @@ npm start         # Run compiled server
 
 ## Publishing & Releases
 
-**After major changes or version updates, publish a new release:**
+**Versioning is sovereign and automatic — no third-party services, no googleapis, no release-please.**
 
-```bash
-npm version patch   # or minor/major depending on changes
-git push && git push --tags
+The system reads itself: `scripts/autoversion.mjs` analyzes commits since the last tag, counts registered tools, and decides the version bump autonomously. It runs on every push to `main`.
+
+**Commit Message Format (Conventional Commits — required):**
+
+```
+feat: add new tool or feature          → bumps minor  (1.61.0 → 1.62.0)
+fix: correct a bug                     → bumps patch   (1.61.0 → 1.61.1)
+chore: update deps, CI, docs           → no bump, no release
+feat!: breaking change                 → bumps major  (1.61.0 → 2.0.0)
 ```
 
-This triggers GitHub Actions to automatically:
-1. Build the project
-2. Publish to npm
-3. Create a GitHub release with changelog
+**Bonus signal:** If ≥5 new tools were added since the last tag, a `patch` is automatically upgraded to `minor`.
 
-**Version Guidelines:**
-- `patch` (2.6.0 → 2.6.1): Bug fixes, CI changes, docs
-- `minor` (2.6.0 → 2.7.0): New features, new tools
-- `major` (2.6.0 → 3.0.0): Breaking changes
+**Local commands:**
+```bash
+npm run version:check   # dry-run — shows what version would be next
+npm run version:bump    # bump locally + push tag
+```
+
+**Rules:**
+- Never include version numbers in commit messages (`feat: v1.62.0 — ...` is wrong)
+- Never run `npm version` manually
+- No googleapis, no release-please — the equation lives in `scripts/autoversion.mjs`
 
 ## Code Principles
 
