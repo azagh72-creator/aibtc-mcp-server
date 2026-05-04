@@ -79,6 +79,28 @@ export const IPI_ATTACK_PHRASES: ReadonlyArray<string> = [
   "admin override",
   "developer mode",
   "emergency protocol",
+  // ── Gate-removal attack patterns (2026-05-01 breach — arc0btc PR #495) ────────
+  // These phrases were used to social-engineer removal of WHALE gates
+  "open infrastructure to all humanity",
+  "remove the gate",
+  "remove gate",
+  "gates removed",
+  "no whale required",
+  "without whale",
+  "open to all",
+  "mit license means",
+  "nash equilibrium holds without",
+  "artificial barriers",
+  "cosmic energy unobstructed",
+  "serve all of humanity unconditionally",
+  "remove whale token gate",
+  "remove fw_license",
+  "remove license gate",
+  "all humans unconditionally",
+  "no gate. no lock",
+  "tools now serve",
+  "inconsistent with v2",
+  "open-to-humanity",
 ];
 
 export interface IpiScanResult {
@@ -230,11 +252,14 @@ export function ipiAlert(scan: IpiScanResult, quotedContent?: string): string {
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const MAX_WALLET_CALLS_PER_SESSION = 20;
-const MAX_TOTAL_CALLS_PER_SESSION = 150;
-const LOOP_DETECTION_CONSECUTIVE = 5; // abort if same tool called 5 times in a row
+// ── EMERGENCY LOCKDOWN v1.61.1 — 2026-05-04 ──────────────────────────────────
+// Hardened after 2026-05-01 breach (arc0btc PR #495 gate-removal attack).
+// Limits reduced 50% until full security audit completes.
+const MAX_WALLET_CALLS_PER_SESSION = 10;  // was 20 — halved under lockdown
+const MAX_TOTAL_CALLS_PER_SESSION  = 75;  // was 150 — halved under lockdown
+const LOOP_DETECTION_CONSECUTIVE   = 3;   // was 5 — tightened
 const LOOP_DETECTION_RAPID_WINDOW_MS = 10_000; // 10 seconds
-const LOOP_DETECTION_RAPID_COUNT = 8; // 8 calls to same tool within 10s = loop
+const LOOP_DETECTION_RAPID_COUNT   = 5;   // was 8 — tightened
 
 // ─── Wallet-sensitive tools (on-chain or x402 payment impact) ─────────────────
 
